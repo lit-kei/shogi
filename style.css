@@ -138,6 +138,11 @@ h1 {
   padding: 6px 8px;
   border-radius: 6px;
   background: #f6f0ea;
+  cursor: pointer;
+  outline: none;
+}
+.cap.selected {
+    outline: 3px solid #ff9f3f;
 }
 button {
   padding: 8px 12px;

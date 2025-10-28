@@ -29,12 +29,15 @@ const initialSetup = [
 [ null,{t:6,p:'black'},null,null,null,null,null,{t:7,p:'black'},null ],
 [ {t:2,p:'black'},{t:3,p:'black'},{t:4,p:'black'},{t:5,p:'black'},{t:14,p:'black'},{t:5,p:'black'},{t:4,p:'black'},{t:3,p:'black'},{t:2,p:'black'} ],
 ];
-const promotable = [{from:1,to:8},{from:2,to:9},{from:3,to:10},{from:4,to:11},{from:6,to:12},{from:7,to:13}];
+const promote = [false,8,9,10,11,false,12,13,false,false,false,false,false,false,false,false];
+const toJa = {1:["１","一"],2:["２","二"],3:["３","三"],4:["４","四"],5:["５","五"],6:["６","六"],7:["７","七"],8:["８","八"],9:["９","九"]}
 let boardState = [];
+let last = [-1,-1];
 let currentPlayer = "white";
 let selected = null;
 let count = 0;
 let history = [];
+let put = null;
 let possibleMoves = [];
 const komadai = { black: {}, white: {} };
 const boardEl = document.getElementById("board");
@@ -50,16 +53,18 @@ function deepCopySetup() {
 }
 function init() {
   boardState = deepCopySetup();
+  last = [-1,-1];
   currentPlayer = "white";
   selected = null;
   count = 0;
   history = [];
+  put = null;
   komadai.black = {};
   komadai.white = {};
   possibleMoves = [];
+  historyEl.innerHTML = '';
   renderBoard();
   renderKomadai();
-  renderHistory();
   updateTurnUI();
 }
 function renderBoard() {
@@ -98,6 +103,7 @@ function onSquareClick(e) {
         return;
     }
     selected = { r, c };
+    put = null;
     sq.classList.add("selected");
     highlightPossibleMoves(r, c);
     return;
@@ -107,11 +113,55 @@ function onSquareClick(e) {
     const to = { r, c };
     makeMove(from, to);
     selected = null;
+    put = null;
+    clearHighlights();
+  }
+  if (put && possibleMoves.some(move => move[0] === r && move[1] === c)) {
+    selected = null;
+    boardState[r][c] = {t:put,p:currentPlayer};
+    count++;
+    currentPlayer = currentPlayer === "black" ? "white" : "black";
+    makeHistory(`${posToSfen({r,c})}${mapping[put].display}打`);
+    put = null;
+    renderBoard();
+    renderKomadai();
+    updateTurnUI();
+
     clearHighlights();
   }
 }
+function makeHistory(txt) {
+    history.push({txt:txt,board:[...boardState]});
+    const historyDiv = document.createElement('div');
+    historyDiv.className = "history";
+    const countSpan = document.createElement('span');
+    countSpan.textContent = count + ".";
+    countSpan.className = "count";
+    const kifuSpan = document.createElement('span');
+    kifuSpan.textContent = txt;
+    kifuSpan.className = "kifu";
+    historyDiv.appendChild(countSpan);
+    historyDiv.appendChild(kifuSpan);
+    historyEl.appendChild(historyDiv);
+}
+function onKomadaiClick(e) {
+    const sq = e.currentTarget;
+    const p = sq.dataset.p;
+    const t = Number(sq.dataset.t);
+    if (p == currentPlayer) {
+        clearHighlights();
+        if (put && put == t) {
+            put = null;
+            return;
+        }
+        put = t;
+        selected = null;
+        sq.classList.add("selected");
+        highlightPossiblePuts(t, p);
+    }
+}
 function clearHighlights() {
-  document.querySelectorAll(".square").forEach((s) => {
+  document.querySelectorAll(".square, .cap").forEach((s) => {
     s.classList.remove("highlight");
     s.classList.remove("selected");
   });
@@ -156,10 +206,80 @@ function highlightPossibleMoves(r, c) {
         }
     });
 }
-function makeMove(from, to) {
+function highlightPossiblePuts(t, p) {
+    possibleMoves = [];
+    if (t == 1) {
+        for (let i = 0; i < 9; i++) {
+            if (!boardState.some(r => r[i] && r[i].p == p && r[i].t == 1)) {
+                for (let j = 0; j < 9; j++) {
+                    if (j != reverse(0, p) && boardState[j][i] === null) {
+                        possibleMoves.push([j, i]);
+                        document.querySelector(`.square[data-r='${j}'][data-c='${i}']`).classList.add("highlight");
+                    }
+                }
+            }
+        }
+    } else {
+        for (let i = 0; i < 9; i++) {
+            for (let j = 0; j < 9; j++) {
+                if ((t != 2 || i != reverse(0, p)) && (t != 3 || i != reverse(0, p)) && (t != 3 || i != reverse(1, p)) && boardState[i][j] === null) {
+                    possibleMoves.push([i, j]);
+                    document.querySelector(`.square[data-r='${i}'][data-c='${j}']`).classList.add("highlight");
+                }
+            }
+        }
+    }
+}
+function askPromotion() {
+  return new Promise((resolve) => {
+    modal.style.display = 'block';
+    // 成るボタン
+    document.getElementById('promote-yes').onclick = () => {
+      modal.style.display = 'none';
+      resolve(true);
+    };
+    // 成らないボタン
+    document.getElementById('promote-no').onclick = () => {
+      modal.style.display = 'none';
+      resolve(false);
+    };
+  });
+}
+async function makeMove(from, to) {
   const piece = boardState[from.r][from.c];
   const dest = boardState[to.r][to.c];
   if (!piece) return;
+  let promoted = null;
+  if ((piece.p == "black" && to.r <= 2 && promote[piece.t]) || (piece.p == "white" && to.r >= 6 && promote[piece.t])) {
+    switch (piece.t) {
+        case 1:
+            if (to.r == reverse(0, piece.p)) {
+                promoted = true;
+            } else {
+                promoted = await askPromotion();
+            }
+            break;
+        case 2:
+            if (to.r == reverse(0, piece.p)) {
+                promoted = true;
+            } else {
+                promoted = await askPromotion();
+            }
+            break;
+        case 3:
+            if (to.r == reverse(0, piece.p) || to.r == reverse(1, piece.p)) {
+                promoted = true;
+            } else {
+                promoted = await askPromotion();
+            }
+            break;
+        default:
+            promoted = await askPromotion();
+            break;
+    }
+    
+  }
+  count++;
   if (dest) {
     const captured = { ...dest };
     const base = demote(captured.t);
@@ -168,42 +288,25 @@ function makeMove(from, to) {
     komadai[owner][base]++;
   }
   boardState[to.r][to.c] = { ...piece };
+  if (promoted) boardState[to.r][to.c].t = promote[boardState[to.r][to.c].t];
   boardState[from.r][from.c] = null;
-  const moveStr = `${piece.p === "black" ? "▲" : "△"} ${posToSfen(
-    from
-  )} → ${posToSfen(to)} ${dest ? "x" + dest.t : ""}`;
-  history.push(moveStr);
+  const moveStr = `${posToSfen(to)}${mapping[piece.t].display}${promoted === null ? "" : promoted ? "成" : "不成"}`;
+  makeHistory(moveStr);
   currentPlayer = currentPlayer === "black" ? "white" : "black";
   renderBoard();
   renderKomadai();
-  renderHistory();
   updateTurnUI();
 }
 function demote(t) {
-    switch (t) {
-    case "龍":
-        return "飛";
-    case "馬":
-        return "角";
-    case "と":
-        return "歩";
-    case "成銀":
-        return "銀";
-    case "成桂":
-        return "桂";
-    case "成香":
-        return "香";
-    default:
-        return t;
-    }
+    const s = promote.indexOf(t);
+    return s == -1 ? t : s;
 }
 function posToSfen(pos) {
   const file = 9 - pos.c;
   const rank = pos.r + 1;
-  return `${file}${rank}`;
-}
-function renderHistory() {
-  historyEl.textContent = history.join("\n");
+  if (last[0] == file && last[1] == rank) return '同';
+  last = [file, rank];
+  return `${toJa[file][0]}${toJa[rank][1]}`;
 }
 function renderKomadai() {
   komadaiBlackEl.innerHTML = "";
@@ -216,7 +319,10 @@ function renderKomadai() {
     Object.keys(map).forEach((k) => {
       const span = document.createElement("div");
       span.className = "cap";
-      span.textContent = `${k} x${map[k]}`;
+      span.textContent = `${mapping[k].display} x${map[k]}`;
+      span.dataset.t = k;
+      span.dataset.p = ownerKey;
+      span.addEventListener('click', onKomadaiClick);
       ownerEl.appendChild(span);
     });
   }
@@ -224,11 +330,8 @@ function renderKomadai() {
 function updateTurnUI() {
   turnEl.textContent = currentPlayer === "black" ? "先手 (▲)" : "後手 (△)";
 }
-function go(b) {
-    modal.style.display = 'none';
-}
-function reverse(r, p) {
-    return p === 'black' ? r : 8 - r;
+function reverse(r,p) {
+    return p === "black" ? r : 8 - r;
 }
 document.getElementById("btn-reset").addEventListener("click", () => init());
 init();
@@ -239,7 +342,6 @@ window.doMove = (from, to) => {
 };
 window.getHistory = () => history;
 window.getKomadai = () => komadai;
-window.go = go;
 console.log(
   "将棋GUIロード完了。window.getBoardState(), window.doMove({r,c},{r,c}) などを使えます。"
 );
