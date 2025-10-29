@@ -167,7 +167,7 @@ function getLegalMoves(koma, board,p) {
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
               getMoveList(board, r, c).forEach(([tr, tc]) => {
-                moves.push({form: {put: false, r, c}, to: {r: tr, c: tc}});
+                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc}});
               });
         
         }
