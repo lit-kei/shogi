@@ -427,7 +427,7 @@ function cloneBoard(board) {
 }
 function makeMoveSim(koma, board, move, p) {
     const newBoard = cloneBoard(board);
-    const newKomadai = {black: {...koma['black']}, white: {...koma['white']}}
+    const newKomadai = JSON.parse(JSON.stringify(koma));
     if (move.from.put) {//
       newBoard[move.to.r][move.to.c] = {t:move.from.t, p: p};
       newKomadai[p][move.from.t]--;
