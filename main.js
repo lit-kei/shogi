@@ -135,17 +135,41 @@ function onSquareClick(e) {
     clearHighlights();
   }
 }
+function getMoveList(board, r, c) {
+    const e = board[r][c];
+    if (!e) return [];
+    const s = players[e.p];
+    const moves = mapping[e.t].move;
+    const list = [];
+    moves.forEach(move => {
+        if (move.inf == false) {
+            const newR = move.pos[0] * s + r;
+            const newC = move.pos[1] + c;
+            if (rangeCheck(newR) && rangeCheck(newC)) {
+                const cell = board[newR][newC];
+                if (!cell || cell.p !== e.p) list.push([newR, newC]);
+            }
+        } else {
+            let newR = move.pos[0] * s + r;
+            let newC = move.pos[1] + c;
+            while (rangeCheck(newR) && rangeCheck(newC) && (!board[newR][newC] || board[newR][newC].p !== e.p)) {
+                list.push([newR, newC]);
+                if (board[newR][newC] && board[newR][newC].p !== e.p) break;
+                newR += move.pos[0] * s;
+                newC += move.pos[1];
+            }
+        }
+    });
+    return list;
+}
 function getLegalMoves(koma, board,p) {
     const moves = [];
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
-            const cell = boardState[r][c];
-            if (cell && cell.p === p) {
-                highlightPossibleMoves(board, r, c);
-                possibleMoves.forEach(([tr, tc]) => {
-                    moves.push({from:{put:false, r,c}, to:{r:tr,c:tc}});
-                });
-            }
+              getMoveList(board, r, c).forEach(([tr, tc]) => {
+                moves.push({form: {put: false, r, c}, to: {r: tr, c: tc}});
+              });
+        
         }
     }
     for (const ko in koma[p]) {
