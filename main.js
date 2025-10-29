@@ -148,7 +148,6 @@ function getLegalMoves(koma, board,p) {
             }
         }
     }
-    console.log(koma, koma[p]);
     for (const ko in koma[p]) {
       if (!Object.hasOwn(koma[p], ko)) continue;
       highlightPossiblePuts(board, ko);
@@ -345,8 +344,9 @@ function minimax(koma, board, depth, maximizingPlayer) {
     let bestValue = maximizingPlayer ? -Infinity : Infinity;
 
     for (const move of moves) {
-        const newBoard = makeMoveSim(koma, board, move);
-        const value = minimax(newBoard, depth - 1, !maximizingPlayer);
+        const {newBoard, newKomadai} = makeMoveSim(koma, board, move);
+        const value = minimax(newKomadai, newBoard, depth - 1, !maximizingPlayer);
+        console.log(move, value + "点");
         if (maximizingPlayer)
             bestValue = Math.max(bestValue, value);
         else
@@ -363,8 +363,8 @@ function findBestMove(koma, board, depth) {
     let bestValue = -Infinity;
 
     for (const move of moves) {
-        const newBoard = makeMoveSim(koma, board, move);
-        const value = minimax(koma, newBoard, depth - 1, false);
+        const { newBoard, newKomadai } = makeMoveSim(koma, board, move);
+        const value = minimax(newKomadai, newBoard, depth - 1, false);
         if (value > bestValue) {
             bestValue = value;
             bestMove = move;
