@@ -17,6 +17,7 @@ h1 {
 .wrapper {
   display: flex;
   gap: 20px;
+  min-height: 680px;
   align-items: flex-start;
 }
 .board-container {
@@ -118,7 +119,7 @@ h1 {
   z-index: 2;
 }
 .side {
-  width: 320px;
+  width: 100%;
 }
 .komadai,
 .controls,
@@ -154,9 +155,8 @@ button {
 }
 .controls {
   display: flex;
-  gap: 8px;
+  gap:40px;
   align-items: center;
-  justify-content: space-between;
 }
 .moves pre {
   white-space: pre-wrap;
