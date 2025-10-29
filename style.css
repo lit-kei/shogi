@@ -163,6 +163,18 @@ button {
   font-family: monospace;
   font-size: 13px;
 }
+#ai {
+  display: flex;
+  width: 100%;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.shot {
+  width: 100px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
 @media (max-width: 1000px) {
   .wrapper {
     flex-direction: column;

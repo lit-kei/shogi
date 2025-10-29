@@ -30,7 +30,19 @@ const initialSetup = [
 [ {t:2,p:'black'},{t:3,p:'black'},{t:4,p:'black'},{t:5,p:'black'},{t:14,p:'black'},{t:5,p:'black'},{t:4,p:'black'},{t:3,p:'black'},{t:2,p:'black'} ],
 ];
 const promote = [false,8,9,10,11,false,12,13,false,false,false,false,false,false,false,false];
-const toJa = {1:["１","一"],2:["２","二"],3:["３","三"],4:["４","四"],5:["５","五"],6:["６","六"],7:["７","七"],8:["８","八"],9:["９","九"]}
+const toJa = {1:["１","一"],2:["２","二"],3:["３","三"],4:["４","四"],5:["５","五"],6:["６","六"],7:["７","七"],8:["８","八"],9:["９","九"]};
+const masuValue = [
+[3,3,3,3,3,3,3,3,3],
+[3,3,3,3,3,3,3,3,3],
+[3,3,3,3,3,3,3,3,3],
+[2,2,2,2,2,2,2,2,2],
+[2,2,2,2,2,2,2,2,2],
+[2,2,2,2,2,2,2,2,2],
+[1,1,1,1,1,1,1,1,1],
+[3,3,3,3,3,3,3,3,3],
+[3,3,3,3,3,3,3,3,3]
+]
+
 let boardState = [];
 let last = [-1,-1];
 let currentPlayer = "white";
@@ -323,10 +335,10 @@ async function makeMove(from, to) {
   renderKomadai();
   updateTurnUI();
 }
-function minimax(board, depth, maximizingPlayer) {
+function minimax(koma, board, depth, maximizingPlayer) {
     if (depth === 0) return evaluate(board);
 
-    const moves = getLegalMoves(board, maximizingPlayer ? "sente" : "gote");
+    const moves = getLegalMoves(koma, board, maximizingPlayer ? "black" : "white");
     if (moves.length === 0) return evaluate(board);
 
     let bestValue = maximizingPlayer ? -Infinity : Infinity;
@@ -351,7 +363,7 @@ function findBestMove(koma, board, depth) {
 
     for (const move of moves) {
         const newBoard = makeMoveSim(koma, board, move);
-        const value = minimax(newBoard, depth - 1, false);
+        const value = minimax(koma, newBoard, depth - 1, false);
         if (value > bestValue) {
             bestValue = value;
             bestMove = move;
@@ -364,7 +376,7 @@ function findBestMove(koma, board, depth) {
 // === AIのターンを実行 ===
 async function aiMove() {
     await new Promise(r => setTimeout(r, 300)); // 思考時間
-    const bestMove = findBestMove(boardState, 2); // 深さ2手先
+    const bestMove = findBestMove(komadai, boardState, 2); // 深さ2手先
     if (bestMove) {
         makeMove(bestMove.from, bestMove.to);
         renderBoard();
