@@ -387,6 +387,7 @@ function findBestMove(koma, board, depth) {
     let bestValue = -Infinity;
 
     for (const move of moves) {
+      console.log(move);
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move);
         const value = minimax(newKomadai, newBoard, depth - 1, false);
         if (value > bestValue) {
@@ -424,7 +425,7 @@ function cloneBoard(board) {
 function makeMoveSim(koma, board, move, p) {
     const newBoard = cloneBoard(board);
     const newKomadai = {black: {...koma['black']}, white: {...koma['white']}}
-    if (move.from.put) {
+    if (move.from.put) {//
       newBoard[move.to.r][move.to.c] = {t:move.from.t, p: p};
       newKomadai[p][move.from.t]--;
     } else {
