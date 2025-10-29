@@ -386,6 +386,7 @@ function findBestMove(koma, board, depth) {
     let bestValue = -Infinity;
 
     for (const move of moves) {
+        console.log(move);
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move);
         const value = minimax(newKomadai, newBoard, depth - 1, false);
         console.log(move, value + "点");
