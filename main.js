@@ -617,7 +617,7 @@ document.getElementById("btn-reset").addEventListener("click", () => {
 });
 document.getElementById('btn-ana').addEventListener('click', aiMove);
 document.addEventListener("keydown", function(event) {
-  if (event.code === "Space") {
+  if (event.code === "Enter") {
     if (aiMode[currentPlayer]) aiMove();
   }
 });
