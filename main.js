@@ -138,9 +138,6 @@ function onSquareClick(e) {
     put = null;
     clearHighlights();
   }
-  if (aiMode[currentPlayer]) {
-    aiMove();
-  }
 }
 function getMoveList(board, r, c, friendFire = false) {
     const e = board[r][c];
@@ -619,6 +616,11 @@ document.getElementById("btn-reset").addEventListener("click", () => {
   if(confirm("本当に初期化しますか？")) init();
 });
 document.getElementById('btn-ana').addEventListener('click', aiMove);
+document.addEventListener("keydown", function(event) {
+  if (event.code === "Space") {
+    if (aiMode[currentPlayer]) aiMove();
+  }
+});
 init();
 window.getBoardState = () => boardState;
 window.getCurrentPlayer = () => currentPlayer;
