@@ -149,11 +149,11 @@ function getLegalMoves(koma, board,p) {
         }
     }
     console.log(koma, koma[p]);
-    for (const koma in koma[p]) {
-      if (!Object.hasOwn(koma[p], koma)) continue;
-      highlightPossiblePuts(board, koma);
+    for (const ko in koma[p]) {
+      if (!Object.hasOwn(koma[p], ko)) continue;
+      highlightPossiblePuts(board, ko);
       possibleMoves.forEach(([tr, tc]) => {
-        moves.push({from:{put:true, t:koma}, to:{r:tr,c:tc}});
+        moves.push({from:{put:true, t:ko}, to:{r:tr,c:tc}});
       });
       
       

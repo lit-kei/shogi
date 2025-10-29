@@ -170,11 +170,11 @@ button {
   flex-wrap: wrap;
 }
 .shot {
-  width: 200px;
+  width: 150px;
   background: white;
   border-radius: 10px;
   margin: 20px 0;
-  height: 123px;
+  height: 93px;
   padding: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
   text-align: center;
