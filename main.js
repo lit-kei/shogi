@@ -409,7 +409,7 @@ function evaluate(board, p) {
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
             const piece = board[r][c];
-            if (piece === 0) continue;
+            if (piece === null) continue;
             const value = mapping[piece.t].value * masuValue[r][c];
             if (p === piece.p) {
               score += value;
