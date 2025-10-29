@@ -177,6 +177,10 @@ button {
   height: 123px;
   padding: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  text-align: center;
+}
+.title {
+  margin: 0;
 }
 @media (max-width: 1000px) {
   .wrapper {
