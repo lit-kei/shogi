@@ -138,6 +138,9 @@ function onSquareClick(e) {
     put = null;
     clearHighlights();
   }
+  if (aiMode[currentPlayer]) {
+    aiMove();
+  }
 }
 function getMoveList(board, r, c, friendFire = false) {
     const e = board[r][c];
