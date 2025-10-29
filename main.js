@@ -148,6 +148,7 @@ function getLegalMoves(koma, board,p) {
             }
         }
     }
+    console.log(koma, koma[p]);
     for (const koma in koma[p]) {
       if (!Object.hasOwn(koma[p], koma)) continue;
       highlightPossiblePuts(board, koma);
@@ -377,10 +378,7 @@ function findBestMove(koma, board, depth) {
 async function aiMove() {
     await new Promise(r => setTimeout(r, 300)); // 思考時間
     const bestMove = findBestMove(komadai, boardState, 2); // 深さ2手先
-    if (bestMove) {
-        makeMove(bestMove.from, bestMove.to);
-        renderBoard();
-    }
+    console.log(bestMove);
 }
 function evaluate(board) {
     let score = 0;
