@@ -439,7 +439,7 @@ function makeMoveSim(koma, board, move, p) {
         newBoard[move.to.r][move.to.c].t = promote[piece.t];
       }
       if (dest) {
-        if (newKomadai[p][dest.t]) {
+        if (!newKomadai[p][dest.t]) {
           newKomadai[p][dest.t] = 1;
         } else {
           newKomadai[p][dest.t]++;
