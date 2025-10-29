@@ -387,7 +387,6 @@ function findBestMove(koma, board, depth) {
     let bestValue = -Infinity;
 
     for (const move of moves) {
-      console.log(move);
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move);
         const value = minimax(newKomadai, newBoard, depth - 1, false);
         if (value > bestValue) {
@@ -405,14 +404,18 @@ async function aiMove() {
     const bestMove = findBestMove(komadai, boardState, 2); // 深さ2手先
     console.log(bestMove);
 }
-function evaluate(board) {
+function evaluate(board, p) {
     let score = 0;
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
             const piece = board[r][c];
             if (piece === 0) continue;
-            const value = pieceValues[Math.abs(piece)] || 0;
-            score += (piece > 0 ? value : -value);
+            const value = mapping[piece.t].value * masuValue[r][c];
+            if (p === piece.p) {
+              score += value;
+            } else {
+              score -= value;
+            }
         }
     }
     return score;
