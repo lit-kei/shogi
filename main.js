@@ -1,21 +1,21 @@
 const kinMoves = [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,0],inf:false}];
 const mapping = {
     0:{display: "", move: [], value: 0},
-    1:{display: "歩", move: [{pos:[-1,0],inf:false}], value: 1},
-    2:{display: "香", move: [{pos:[-1,0],inf:true}], value: 5},
-    3:{display: "桂", move: [{pos:[-2,-1],inf:false},{pos:[-2,1],inf:false}], value: 5},
-    4:{display: "銀", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,1],inf:false}], value: 7},
-    5:{display: "金", move: [...kinMoves], value: 10},
-    6:{display: "角", move: [{pos:[-1,-1],inf:true},{pos:[-1,1],inf:true},{pos:[1,-1],inf:true},{pos:[1,1],inf:true}], value: 13},
-    7:{display: "飛", move: [{pos:[-1,0],inf:true},{pos:[0,-1],inf:true},{pos:[0,1],inf:true},{pos:[1,0],inf:true}], value: 15},
-    8:{display: "と", move: [...kinMoves], value: 2},
-    9:{display: "成香", move: [...kinMoves], value: 6},
-    10:{display: "成桂", move: [...kinMoves], value: 6},
-    11:{display: "成銀", move: [...kinMoves], value: 8},
-    12:{display: "馬", move: [{pos:[-1,-1],inf:true},{pos:[-1,1],inf:true},{pos:[1,-1],inf:true},{pos:[1,1],inf:true},{pos:[-1,0],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,0],inf:false}], value: 14},
-    13:{display: "龍", move: [{pos:[-1,0],inf:true},{pos:[0,-1],inf:true},{pos:[0,1],inf:true},{pos:[1,0],inf:true},{pos:[-1,-1],inf:false},{pos:[-1,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,1],inf:false}], value: 16},
-    14:{display: "王", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 10},
-    15:{display: "玉", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 10}
+    1:{display: "歩", move: [{pos:[-1,0],inf:false}], value: 10},
+    2:{display: "香", move: [{pos:[-1,0],inf:true}], value: 20},
+    3:{display: "桂", move: [{pos:[-2,-1],inf:false},{pos:[-2,1],inf:false}], value: 20},
+    4:{display: "銀", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,1],inf:false}], value: 35},
+    5:{display: "金", move: [...kinMoves], value: 50},
+    6:{display: "角", move: [{pos:[-1,-1],inf:true},{pos:[-1,1],inf:true},{pos:[1,-1],inf:true},{pos:[1,1],inf:true}], value: 80},
+    7:{display: "飛", move: [{pos:[-1,0],inf:true},{pos:[0,-1],inf:true},{pos:[0,1],inf:true},{pos:[1,0],inf:true}], value: 100},
+    8:{display: "と", move: [...kinMoves], value: 12},
+    9:{display: "成香", move: [...kinMoves], value: 24},
+    10:{display: "成桂", move: [...kinMoves], value: 24},
+    11:{display: "成銀", move: [...kinMoves], value: 42},
+    12:{display: "馬", move: [{pos:[-1,-1],inf:true},{pos:[-1,1],inf:true},{pos:[1,-1],inf:true},{pos:[1,1],inf:true},{pos:[-1,0],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,0],inf:false}], value: 96},
+    13:{display: "龍", move: [{pos:[-1,0],inf:true},{pos:[0,-1],inf:true},{pos:[0,1],inf:true},{pos:[1,0],inf:true},{pos:[-1,-1],inf:false},{pos:[-1,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,1],inf:false}], value: 120},
+    14:{display: "王", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 100},
+    15:{display: "玉", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 100}
 }
 const players = {white: -1, black: 1};
 const initialSetup = [
@@ -45,7 +45,7 @@ const masuValue = [
 
 let searchDepth = 3;
 let maxPutWidth = 30;
-let aiMode = false;
+let aiMode = {white: false, black: false};
 let boardState = [];
 let last = [-1,-1];
 let currentPlayer = "white";
@@ -139,7 +139,7 @@ function onSquareClick(e) {
     clearHighlights();
   }
 }
-function getMoveList(board, r, c) {
+function getMoveList(board, r, c, friendFire = false) {
     const e = board[r][c];
     if (!e) return [];
     const s = players[e.p];
@@ -151,14 +151,15 @@ function getMoveList(board, r, c) {
             const newC = move.pos[1] + c;
             if (rangeCheck(newR) && rangeCheck(newC)) {
                 const cell = board[newR][newC];
-                if (!cell || cell.p !== e.p) list.push([newR, newC]);
+                if (!cell || cell.p !== e.p || friendFire) list.push([newR, newC]);
             }
         } else {
             let newR = move.pos[0] * s + r;
             let newC = move.pos[1] + c;
-            while (rangeCheck(newR) && rangeCheck(newC) && (!board[newR][newC] || board[newR][newC].p !== e.p)) {
+            while (rangeCheck(newR) && rangeCheck(newC) && (!board[newR][newC] || board[newR][newC].p !== e.p || friendFire)) {
+                const cell = board[newR][newC];
                 list.push([newR, newC]);
-                if (board[newR][newC] && board[newR][newC].p !== e.p) break;
+                if (cell) break;
                 newR += move.pos[0] * s;
                 newC += move.pos[1];
             }
@@ -218,6 +219,7 @@ function makeHistory(txt) {
     historyDiv.appendChild(countSpan);
     historyDiv.appendChild(kifuSpan);
     historyEl.appendChild(historyDiv);
+    historyEl.scrollTop = historyEl.scrollHeight;
 }
 function onKomadaiClick(e) {
     const sq = e.currentTarget;
@@ -320,7 +322,7 @@ function askPromotion() {
     };
   });
 }
-async function makeMove(from, to) {
+async function makeMove(from, to, promotion = false) {
   let moveStr = "";
   if (from.put) {
     boardState[to.r][to.c] = {t:from.t,p:currentPlayer};
@@ -333,33 +335,36 @@ async function makeMove(from, to) {
     if (!piece) return;
     let promoted = null;
     if ((piece.p == "black" && to.r <= 2 && promote[piece.t]) || (piece.p == "white" && to.r >= 6 && promote[piece.t])) {
-      switch (piece.t) {
-          case 1:
-              if (to.r == reverse(0, piece.p)) {
-                  promoted = true;
-              } else {
-                  promoted = await askPromotion();
-              }
-              break;
-          case 2:
-              if (to.r == reverse(0, piece.p)) {
-                  promoted = true;
-              } else {
-                  promoted = await askPromotion();
-              }
-              break;
-          case 3:
-              if (to.r == reverse(0, piece.p) || to.r == reverse(1, piece.p)) {
-                  promoted = true;
-              } else {
-                  promoted = await askPromotion();
-              }
-              break;
-          default:
-              promoted = await askPromotion();
-              break;
+      if (promotion) {
+        promoted = true;
+      } else {
+        switch (piece.t) {
+            case 1:
+                if (to.r == reverse(0, piece.p)) {
+                    promoted = true;
+                } else {
+                    promoted = await askPromotion();
+                }
+                break;
+            case 2:
+                if (to.r == reverse(0, piece.p)) {
+                    promoted = true;
+                } else {
+                    promoted = await askPromotion();
+                }
+                break;
+            case 3:
+                if (to.r == reverse(0, piece.p) || to.r == reverse(1, piece.p)) {
+                    promoted = true;
+                } else {
+                    promoted = await askPromotion();
+                }
+                break;
+            default:
+                promoted = await askPromotion();
+                break;
+        }
       }
-      
     }
     count++;
     if (dest) {
@@ -420,7 +425,7 @@ function findBestMove(koma, board, depth) {
 
     for (const move of searchMoves) {
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
-        const value = minimax(newKomadai, newBoard, depth - 1, currentPlayer == "black");
+        const value = minimax(newKomadai, newBoard, depth - 1, currentPlayer == "black") * (move.from.put ? 0.5 : 1);
         for (let i = 0; i < 9; i++) {
           if (i == values.length) {
             values.push({move, value});
@@ -451,7 +456,7 @@ function findBestMove(koma, board, depth) {
           } else {
             const piece = boardState[e.move.from.r][e.move.from.c];
             const promoted = (currentPlayer == "black" &&  e.move.to.r <= 2 && promote[piece.t]) || (currentPlayer == "white" &&  e.move.to.r >= 6 && promote[piece.t]);
-            if (last[0] == file && last[1] == rank) {
+            if (last[0] == 9 - e.move.to.c && last[1] == e.move.to.r + 1) {
               titleS.textContent = `同${mapping[piece.t].display}${promoted ? "成" : ""}`;
             } else {
               titleS.textContent = `${file}${rank}${mapping[piece.t].display}${promoted ? "成" : ""}`;
@@ -473,33 +478,72 @@ function findBestMove(koma, board, depth) {
 async function aiMove() {
     const bestMove = findBestMove(komadai, boardState, searchDepth);
     console.log(bestMove);
-    if (aiMode) makeMove(bestMove.from, bestMove.to);
+    if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to, true);
 }
-function evaluate(koma, board, p) {
-    let score = 0;
+function makeAttackMap(board) {
+    // attackMap[r][c] = [{p: 'black', t: pieceType}, ...]
+    const attackMap = Array.from({ length: 9 }, () =>
+        Array.from({ length: 9 }, () => [])
+    );
+
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
             const piece = board[r][c];
-            if (piece === null) continue;
-            const value = mapping[piece.t].value * masuValue[reverse(r,p)][c];
-            if (p === piece.p) {
-              score += value;
-            } else {
-              score -= value;
+            if (!piece) continue;
+
+            // その駒の全ての攻撃可能マスを取得
+            const moves = getMoveList(board, r, c, true); 
+            for (const [rr, cc] of moves) {
+                if (rr < 0 || rr >= 9 || cc < 0 || cc >= 9) continue;
+                attackMap[rr][cc].push({ p: piece.p, t: piece.t });
             }
         }
     }
-        // 持ち駒の価値も加算
+    return attackMap;
+}
+function evaluate(koma, board, p) {
+    let score = 0;
+    const attackMap = makeAttackMap(board); // 全マスがどちらに攻撃されているか
+
+    for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+            const piece = board[r][c];
+            if (!piece) continue;
+
+            const baseValue = mapping[piece.t].value;
+            const posValue = masuValue[reverse(r, p)][c];
+            let v = Math.floor(baseValue * posValue * 0.7);
+
+            // 駒の安全性評価
+            const attackers = attackMap[r][c].filter(a => a.p !== piece.p);
+            const defenders = attackMap[r][c].filter(a => a.p === piece.p);
+            if (attackers.length > defenders.length) {
+            // ---- ただ取りペナルティ ----
+            if (attackers.length > defenders.length) {
+                const danger = attackers.length - defenders.length;
+                // 駒の価値に比例して減点（たとえば角や飛車なら大損）
+                v -= Math.floor(baseValue * (1.5 + 0.3 * danger));
+            }
+            } else if (defenders.length > attackers.length) {
+                // 守られている
+                v += Math.floor(baseValue * 0.5);
+            }
+
+            // 最終スコア加算
+            if (piece.p === p) score += v;
+            else score -= v;
+        }
+    }
+
+    // 持ち駒加算
     for (const player in koma) {
         for (const t in koma[player]) {
             const pieceValue = mapping[t].value * koma[player][t];
-            if (player === p) {
-                score += pieceValue;
-            } else {
-                score -= pieceValue;
-            }
+            if (player === p) score += pieceValue;
+            else score -= pieceValue;
         }
     }
+
     return score;
 }
 
