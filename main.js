@@ -395,13 +395,12 @@ function minimax(koma, board, depth, maximizingPlayer, aiPlayer) {
     let bestValue = maximizingPlayer ? -Infinity : Infinity;
     const searchMoves = [...moves.slice(0,change), ...getListRandomly(moves.slice(change))];
 
-
     for (const move of searchMoves) {
         const {newBoard, newKomadai} = makeMoveSim(koma, board, move, aiPlayer);
-        const value = minimax(newKomadai, newBoard, depth - 1, !maximizingPlayer, aiPlayer)
         const boardValue = evaluate(newKomadai, newBoard, aiPlayer);
+        const value = minimax(newKomadai, newBoard, depth - 1, !maximizingPlayer, aiPlayer) + boardValue;
         if (isNaN(boardValue)) {
-          console.log(move, newKomadai, newBoard, koma, board, aiPlayer);
+          console.error(boardValue, move, newKomadai, newBoard, koma, board, aiPlayer, depth);
         }
         
         if (maximizingPlayer) {
@@ -427,7 +426,6 @@ function getListRandomly(list) {
 // === 最善手を決定する ===
 async function findBestMove(koma, board, depth, aiPlayer) {
     const {moves, change} = getLegalMoves(koma, board, aiPlayer);
-    console.log(aiPlayer);
     let values = [];
     let bestMove = null;
     let bestValue = -Infinity;
@@ -524,7 +522,7 @@ let moveV = 2;
 let pena = 1;
 let komaV = 3;
 function evaluate(koma, board, p) {
-    let score = 0;
+    let score = 300; //げた
     const attackMap = makeAttackMap(board); // 全マスがどちらに攻撃されているか
 
     for (let r = 0; r < 9; r++) {
@@ -543,10 +541,10 @@ function evaluate(koma, board, p) {
             // ---- ただ取りペナルティ ----
             if (attackers.length > 0) {
               if (attackers.some(a => (mapping[a.t].value < mapping[piece.t].value)) && attackers.length >= 2) {
-                v -= baseValue * pena * 2;
+                v -= (baseValue + 30) * pena * 2;
               }
               if (defenders.length == 0) {
-                v -= baseValue * pena * 3;
+                v -= (baseValue + 50) * pena * 3;
               }
             } else {
               v += baseValue;
@@ -583,9 +581,7 @@ function makeMoveSim(koma, board, move, p) {
     const newBoard = cloneBoard(board);
     const newKomadai = JSON.parse(JSON.stringify(koma));
     if (move.from.put) {//
-    if (!newKomadai[p][move.from.t] || newKomadai[p][move.from.t] <= 0) {
-        console.warn("持ち駒が足りません:", move.from.t, newKomadai, koma);
-    } else {
+    if (newKomadai[p][move.from.t] || newKomadai[p][move.from.t] > 0) {
         newBoard[move.to.r][move.to.c] = {t:move.from.t, p: p};
         newKomadai[p][move.from.t]--;
         if (newKomadai[p][move.from.t] === 0) delete newKomadai[p][move.from.t]; // 0なら削除
