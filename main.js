@@ -425,7 +425,7 @@ function findBestMove(koma, board, depth) {
 
     for (const move of searchMoves) {
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
-        const value = minimax(newKomadai, newBoard, depth - 1, currentPlayer == "black") * (move.from.put ? 0.5 : 1);
+        const value = minimax(newKomadai, newBoard, depth - 1, currentPlayer == "black");
         for (let i = 0; i < 9; i++) {
           if (i == values.length) {
             values.push({move, value});
@@ -517,17 +517,24 @@ function evaluate(koma, board, p) {
             // 駒の安全性評価
             const attackers = attackMap[r][c].filter(a => a.p !== piece.p);
             const defenders = attackMap[r][c].filter(a => a.p === piece.p);
-            if (attackers.length > defenders.length) {
+            
             // ---- ただ取りペナルティ ----
+            if (attackers.length > 0) {
+              attackers.forEach(pi => {
+                if (mapping[pi.t].value < mapping[piece.t].value) {
+                  v -= baseValue * 2;
+                }
+              });
+            }
             if (attackers.length > defenders.length) {
                 const danger = attackers.length - defenders.length;
                 // 駒の価値に比例して減点（たとえば角や飛車なら大損）
                 v -= Math.floor(baseValue * (1.5 + 0.3 * danger));
-            }
             } else if (defenders.length > attackers.length) {
                 // 守られている
                 v += Math.floor(baseValue * 0.5);
             }
+
 
             // 最終スコア加算
             if (piece.p === p) score += v;
