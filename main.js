@@ -14,8 +14,8 @@ const mapping = {
     11:{display: "成銀", move: [...kinMoves], value: 42},
     12:{display: "馬", move: [{pos:[-1,-1],inf:true},{pos:[-1,1],inf:true},{pos:[1,-1],inf:true},{pos:[1,1],inf:true},{pos:[-1,0],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,0],inf:false}], value: 96},
     13:{display: "龍", move: [{pos:[-1,0],inf:true},{pos:[0,-1],inf:true},{pos:[0,1],inf:true},{pos:[1,0],inf:true},{pos:[-1,-1],inf:false},{pos:[-1,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,1],inf:false}], value: 120},
-    14:{display: "王", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 100},
-    15:{display: "玉", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 100}
+    14:{display: "王", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 200},
+    15:{display: "玉", move: [{pos:[-1,-1],inf:false},{pos:[-1,0],inf:false},{pos:[-1,1],inf:false},{pos:[0,-1],inf:false},{pos:[0,1],inf:false},{pos:[1,-1],inf:false},{pos:[1,0],inf:false},{pos:[1,1],inf:false}], value: 200}
 }
 const players = {white: -1, black: 1};
 const initialSetup = [
@@ -181,7 +181,7 @@ function getLegalMoves(koma, board,p) {
     }
     const change = moves.length;
     for (const ko in koma[p]) {
-      if (!Object.hasOwn(koma[p], ko)) continue;
+      if (!Object.hasOwn(koma[p], ko) || koma[p][ko] <= 0) continue;
       const pieceType = Number(ko);
 
       for (let r = 0; r < 9; r++) {
@@ -385,23 +385,32 @@ async function makeMove(from, to, promotion = false) {
   renderKomadai();
   updateTurnUI();
 }
-function minimax(koma, board, depth, maximizingPlayer) {
-    if (depth === 0) return evaluate(koma, board, maximizingPlayer ? "black" : "white");
+function minimax(koma, board, depth, maximizingPlayer, aiPlayer) {
+    if (depth === 0) return evaluate(koma, board, aiPlayer);
+    //const randomID = Math.random().toString(36).substring(2, 10);
 
-    const {moves, change} = getLegalMoves(koma, board, maximizingPlayer ? "black" : "white");
-    if (moves.length === 0) return evaluate(koma, board, maximizingPlayer ? "black" : "white");
+    const {moves, change} = getLegalMoves(koma, board, maximizingPlayer ? aiPlayer : aiPlayer == "black" ? "white" : "black" );
+    if (moves.length === 0) return evaluate(koma, board, aiPlayer);
 
     let bestValue = maximizingPlayer ? -Infinity : Infinity;
     const searchMoves = [...moves.slice(0,change), ...getListRandomly(moves.slice(change))];
 
 
     for (const move of searchMoves) {
-        const {newBoard, newKomadai} = makeMoveSim(koma, board, move, maximizingPlayer ? "black" : "white");
-        const value = minimax(newKomadai, newBoard, depth - 1, !maximizingPlayer);
-        if (maximizingPlayer)
+        const {newBoard, newKomadai} = makeMoveSim(koma, board, move, aiPlayer);
+        const value = minimax(newKomadai, newBoard, depth - 1, !maximizingPlayer, aiPlayer)
+        const boardValue = evaluate(newKomadai, newBoard, aiPlayer);
+        if (isNaN(boardValue)) {
+          console.log(move, newKomadai, newBoard, koma, board, aiPlayer);
+        }
+        
+        if (maximizingPlayer) {
             bestValue = Math.max(bestValue, value);
-        else
+            //console.log(move, randomID, value);
+        } else {
             bestValue = Math.min(bestValue, value);
+            //console.log(move, randomID, value);
+        }
     }
 
     return bestValue;
@@ -416,16 +425,17 @@ function getListRandomly(list) {
 }
 
 // === 最善手を決定する ===
-function findBestMove(koma, board, depth) {
-    const {moves, change} = getLegalMoves(koma, board, currentPlayer);
+async function findBestMove(koma, board, depth, aiPlayer) {
+    const {moves, change} = getLegalMoves(koma, board, aiPlayer);
+    console.log(aiPlayer);
     let values = [];
     let bestMove = null;
     let bestValue = -Infinity;
     const searchMoves = [...moves.slice(0,change), ...getListRandomly(moves.slice(change))];
 
     for (const move of searchMoves) {
-        const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
-        const value = minimax(newKomadai, newBoard, depth - 1, currentPlayer == "black");
+        const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
+        const value = minimax(newKomadai, newBoard, depth - 1, false, aiPlayer) + evaluate(newKomadai, newBoard, aiPlayer);
         for (let i = 0; i < 9; i++) {
           if (i == values.length) {
             values.push({move, value});
@@ -444,7 +454,9 @@ function findBestMove(koma, board, depth) {
         }
         //ユーザーに表示
         aiDiv.innerHTML = '';
+        let n = 10;
         for (const e of values) {
+          n--;
           const shotDiv = document.createElement('div');
           shotDiv.className = 'shot';
           const titleS = document.createElement('h3');
@@ -468,6 +480,10 @@ function findBestMove(koma, board, depth) {
           shotDiv.appendChild(titleS);
           shotDiv.appendChild(valueS);
           aiDiv.appendChild(shotDiv);
+          if (n <= 0) {
+            await new Promise(resolve => setTimeout(resolve, 1));
+            n = 10;
+          }
         }
       }
 
@@ -476,9 +492,12 @@ function findBestMove(koma, board, depth) {
 
 // === AIのターンを実行 ===
 async function aiMove() {
-    const bestMove = findBestMove(komadai, boardState, searchDepth);
-    console.log(bestMove);
-    if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to, true);
+    aiDiv.innerHTML = '';
+    const aiPlayer = currentPlayer;
+    findBestMove(komadai, boardState, searchDepth, aiPlayer).then(bestMove => {
+      console.log(bestMove);
+      if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to, true);
+    });
 }
 function makeAttackMap(board) {
     // attackMap[r][c] = [{p: 'black', t: pieceType}, ...]
@@ -501,6 +520,9 @@ function makeAttackMap(board) {
     }
     return attackMap;
 }
+let moveV = 2;
+let pena = 1;
+let komaV = 3;
 function evaluate(koma, board, p) {
     let score = 0;
     const attackMap = makeAttackMap(board); // 全マスがどちらに攻撃されているか
@@ -511,8 +533,8 @@ function evaluate(koma, board, p) {
             if (!piece) continue;
 
             const baseValue = mapping[piece.t].value;
-            const posValue = masuValue[reverse(r, p)][c];
-            let v = Math.floor(baseValue * posValue * 0.7);
+            //const posValue = masuValue[reverse(r, p)][c];
+            let v = Math.floor(baseValue * moveV);
 
             // 駒の安全性評価
             const attackers = attackMap[r][c].filter(a => a.p !== piece.p);
@@ -520,19 +542,18 @@ function evaluate(koma, board, p) {
             
             // ---- ただ取りペナルティ ----
             if (attackers.length > 0) {
-              attackers.forEach(pi => {
-                if (mapping[pi.t].value < mapping[piece.t].value) {
-                  v -= baseValue * 2;
-                }
-              });
+              if (attackers.some(a => (mapping[a.t].value < mapping[piece.t].value)) && attackers.length >= 2) {
+                v -= baseValue * pena * 2;
+              }
+              if (defenders.length == 0) {
+                v -= baseValue * pena * 3;
+              }
+            } else {
+              v += baseValue;
             }
-            if (attackers.length > defenders.length) {
-                const danger = attackers.length - defenders.length;
-                // 駒の価値に比例して減点（たとえば角や飛車なら大損）
-                v -= Math.floor(baseValue * (1.5 + 0.3 * danger));
-            } else if (defenders.length > attackers.length) {
+            if (defenders.length > attackers.length) {
                 // 守られている
-                v += Math.floor(baseValue * 0.5);
+                v += Math.floor(baseValue * 0.2);
             }
 
 
@@ -546,8 +567,8 @@ function evaluate(koma, board, p) {
     for (const player in koma) {
         for (const t in koma[player]) {
             const pieceValue = mapping[t].value * koma[player][t];
-            if (player === p) score += pieceValue;
-            else score -= pieceValue;
+            if (player === p) score += pieceValue * komaV;
+            else score -= pieceValue * komaV;
         }
     }
 
@@ -562,8 +583,13 @@ function makeMoveSim(koma, board, move, p) {
     const newBoard = cloneBoard(board);
     const newKomadai = JSON.parse(JSON.stringify(koma));
     if (move.from.put) {//
-      newBoard[move.to.r][move.to.c] = {t:move.from.t, p: p};
-      newKomadai[p][move.from.t]--;
+    if (!newKomadai[p][move.from.t] || newKomadai[p][move.from.t] <= 0) {
+        console.warn("持ち駒が足りません:", move.from.t, newKomadai, koma);
+    } else {
+        newBoard[move.to.r][move.to.c] = {t:move.from.t, p: p};
+        newKomadai[p][move.from.t]--;
+        if (newKomadai[p][move.from.t] === 0) delete newKomadai[p][move.from.t]; // 0なら削除
+    }
     } else {
       const dest = newBoard[move.to.r][move.to.c];
       const piece = newBoard[move.from.r][move.from.c];
@@ -572,11 +598,11 @@ function makeMoveSim(koma, board, move, p) {
         newBoard[move.to.r][move.to.c].t = promote[piece.t];
       }
       if (dest) {
-        if (!newKomadai[p][dest.t]) {
-          newKomadai[p][dest.t] = 1;
-        } else {
-          newKomadai[p][dest.t]++;
-        }
+        const captured = { ...dest };
+        const base = demote(captured.t);
+        const owner = piece.p;
+        if (!newKomadai[owner][base]) newKomadai[owner][base] = 0;
+        newKomadai[owner][base]++;
       }
       newBoard[move.from.r][move.from.c] = null;
     }
