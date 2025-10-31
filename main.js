@@ -43,7 +43,7 @@ const masuValue = [
 [3,3,3,3,3,3,3,3,3]
 ]
 
-let searchDepth = 3;
+let searchDepth = 4;
 let maxPutWidth = 30;
 let aiMode = {white: false, black: false};
 let boardState = [];
@@ -385,35 +385,48 @@ async function makeMove(from, to, promotion = false) {
   renderKomadai();
   updateTurnUI();
 }
-function minimax(koma, board, depth, maximizingPlayer, aiPlayer) {
+function minimaxAB(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer) {
+    // --- 終端ノード ---
     if (depth === 0) return evaluate(koma, board, aiPlayer);
-    //const randomID = Math.random().toString(36).substring(2, 10);
 
-    const {moves, change} = getLegalMoves(koma, board, maximizingPlayer ? aiPlayer : aiPlayer == "black" ? "white" : "black" );
+    const currentPlayer = maximizingPlayer ? aiPlayer : (aiPlayer === "black" ? "white" : "black");
+    const { moves, change } = getLegalMoves(koma, board, currentPlayer);
     if (moves.length === 0) return evaluate(koma, board, aiPlayer);
 
-    let bestValue = maximizingPlayer ? -Infinity : Infinity;
-    const searchMoves = [...moves.slice(0,change), ...getListRandomly(moves.slice(change))];
+    // 探索を制限
+    const searchMoves = [...moves.slice(0, change), ...getListRandomly(moves.slice(change))];
 
-    for (const move of searchMoves) {
-        const {newBoard, newKomadai} = makeMoveSim(koma, board, move, aiPlayer);
-        const boardValue = evaluate(newKomadai, newBoard, aiPlayer);
-        const value = minimax(newKomadai, newBoard, depth - 1, !maximizingPlayer, aiPlayer) + boardValue;
-        if (isNaN(boardValue)) {
-          console.error(boardValue, move, newKomadai, newBoard, koma, board, aiPlayer, depth);
+    // --- 最大化プレイヤーの場合 ---
+    if (maximizingPlayer) {
+        let maxEval = -Infinity;
+
+        for (const move of searchMoves) {
+            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
+            const evalValue = minimaxAB(newKomadai, newBoard, depth - 1, alpha, beta, false, aiPlayer);
+            maxEval = Math.max(maxEval, evalValue);
+            alpha = Math.max(alpha, evalValue);
+            if (beta <= alpha) break; // βカット
         }
-        
-        if (maximizingPlayer) {
-            bestValue = Math.max(bestValue, value);
-            //console.log(move, randomID, value);
-        } else {
-            bestValue = Math.min(bestValue, value);
-            //console.log(move, randomID, value);
-        }
+
+        return maxEval;
     }
 
-    return bestValue;
+    // --- 最小化プレイヤーの場合 ---
+    else {
+        let minEval = Infinity;
+
+        for (const move of searchMoves) {
+            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
+            const evalValue = minimaxAB(newKomadai, newBoard, depth - 1, alpha, beta, true, aiPlayer);
+            minEval = Math.min(minEval, evalValue);
+            beta = Math.min(beta, evalValue);
+            if (beta <= alpha) break; // αカット
+        }
+
+        return minEval;
+    }
 }
+
 function getListRandomly(list) {
   if (list.length <= maxPutWidth) return list;
   const newList = [];
@@ -433,7 +446,7 @@ async function findBestMove(koma, board, depth, aiPlayer) {
 
     for (const move of searchMoves) {
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
-        const value = minimax(newKomadai, newBoard, depth - 1, false, aiPlayer) + evaluate(newKomadai, newBoard, aiPlayer);
+        const value = minimaxAB(newKomadai, newBoard, depth - 1, -Infinity, Infinity, false, aiPlayer) + evaluate(newKomadai, newBoard, aiPlayer);
         for (let i = 0; i < 9; i++) {
           if (i == values.length) {
             values.push({move, value});
@@ -541,10 +554,10 @@ function evaluate(koma, board, p) {
             // ---- ただ取りペナルティ ----
             if (attackers.length > 0) {
               if (attackers.some(a => (mapping[a.t].value < mapping[piece.t].value)) && attackers.length >= 2) {
-                v -= (baseValue + 30) * pena * 2;
+                v -= (baseValue + 30) * pena;
               }
               if (defenders.length == 0) {
-                v -= (baseValue + 50) * pena * 3;
+                v -= (baseValue + 50) * pena;
               }
             } else {
               v += baseValue;
