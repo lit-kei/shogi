@@ -42,7 +42,7 @@ const masuValue = [
 [3,3,3,3,3,3,3,3,3],
 [3,3,3,3,3,3,3,3,3]
 ]
-
+let boardHistory = [];
 let searchDepth = 4;
 let maxPutWidth = 30;
 let aiMode = {white: false, black: false};
@@ -51,7 +51,6 @@ let last = [-1,-1];
 let currentPlayer = "white";
 let selected = null;
 let count = 0;
-let history = [];
 let put = null;
 let possibleMoves = [];
 const komadai = { black: {}, white: {} };
@@ -68,12 +67,12 @@ function deepCopySetup() {
   );
 }
 function init() {
+  boardHistory = [];
   boardState = deepCopySetup();
   last = [-1,-1];
   currentPlayer = "white";
   selected = null;
   count = 0;
-  history = [];
   put = null;
   komadai.black = {};
   komadai.white = {};
@@ -107,7 +106,7 @@ function renderBoard() {
     }
   }
 }
-function onSquareClick(e) {
+async function onSquareClick(e) {
   const sq = e.currentTarget;
   const r = Number(sq.dataset.r);
   const c = Number(sq.dataset.c);
@@ -127,6 +126,38 @@ function onSquareClick(e) {
   if (selected && possibleMoves.some(move => move[0] === r && move[1] === c)) {
     const from = { put: false, ...selected };
     const to = { r, c };
+    let promoted = null;
+    const piece = boardState[selected.r][selected.c];
+    if ((to.r <= 2 && piece.p == 'black' && promote[piece.t]) || (to.r >= 6 && piece.p == 'white' && promote[piece.t]) || 
+        (from.r <= 2 && piece.p == 'black' && promote[piece.t]) || (from.r >= 6 && piece.p == 'white' && promote[piece.t])) {
+          switch (piece.t) {
+            case 1:
+                if (to.r == reverse(0, piece.p)) {
+                    promoted = true;
+                } else {
+                    promoted = await askPromotion();
+                }
+                break;
+            case 2:
+                if (to.r == reverse(0, piece.p)) {
+                    promoted = true;
+                } else {
+                    promoted = await askPromotion();
+                }
+                break;
+            case 3:
+                if (to.r == reverse(0, piece.p) || to.r == reverse(1, piece.p)) {
+                    promoted = true;
+                } else {
+                    promoted = await askPromotion();
+                }
+                break;
+            default:
+                promoted = await askPromotion();
+                break;
+        }
+    }
+    to.promoted = promoted;
     makeMove(from, to);
     selected = null;
     put = null;
@@ -172,8 +203,38 @@ function getLegalMoves(koma, board,p) {
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
               if (board[r][c] && board[r][c].p == p) {
+                const piece = board[r][c];
                 getMoveList(board, r, c).forEach(([tr, tc]) => {
-                  moves.push({from: {put: false, r, c}, to: {r: tr, c: tc}});
+                  if ((tr <= 2 && p == 'black' && promote[piece.t]) || (tr >= 6 && p == 'white' && promote[piece.t]) || 
+                      (r <= 2 && p == 'black' && promote[piece.t]) || (r >= 6 && p == 'white' && promote[piece.t])) {
+                        switch (piece.t) {
+                          case 2:
+                              if (tr == reverse(0, piece.p)) {
+                                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: true}});
+                              } else {
+                                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: true}});
+                                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: false}});
+                              }
+                              break;
+                          case 3:
+                              if (tr == reverse(0, piece.p) || tr == reverse(1, piece.p)) {
+                                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: true}});
+                              } else {
+                                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: true}});
+                                moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: false}});
+                              }
+                              break;
+                          case 4:
+                              moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: true}});
+                              moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: false}});
+                              break;
+                          default:
+                              moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: true}});
+                              break;
+                      }
+                  } else {
+                    moves.push({from: {put: false, r, c}, to: {r: tr, c: tc, promoted: null}});
+                  }
                 });
               }
         
@@ -207,7 +268,7 @@ function getLegalMoves(koma, board,p) {
     return {moves, change};
 }
 function makeHistory(txt) {
-    history.push({txt:txt,board:[...boardState]});
+    const thisIndex = count - 1;
     const historyDiv = document.createElement('div');
     historyDiv.className = "history";
     const countSpan = document.createElement('span');
@@ -218,8 +279,37 @@ function makeHistory(txt) {
     kifuSpan.className = "kifu";
     historyDiv.appendChild(countSpan);
     historyDiv.appendChild(kifuSpan);
+    historyDiv.addEventListener('click', (event) => {
+      const clickedHistory = event.target.closest('.history');
+      if (!clickedHistory) return; // 念のため防御
+      backTo(thisIndex, clickedHistory);
+    });
     historyEl.appendChild(historyDiv);
     historyEl.scrollTop = historyEl.scrollHeight;
+}
+function backTo(n, target) {
+  console.log(n);
+  if (0 > n || n >= count) return;
+  const e = boardHistory[n];
+  komadai.black = JSON.parse(JSON.stringify(e.komadai.black));
+  komadai.white = JSON.parse(JSON.stringify(e.komadai.white));
+  boardState = e.boardState.map((row) =>
+    row.map((cell) => (cell ? { ...cell } : null))
+  );
+  last = [...e.last];
+  currentPlayer = e.currentPlayer;
+  count = e.count;
+  let next = target.nextElementSibling;
+
+  while (next) {
+    const toRemove = next;
+    next = next.nextElementSibling;
+    toRemove.remove();
+  }
+
+  renderBoard();
+  renderKomadai();
+  updateTurnUI();
 }
 function onKomadaiClick(e) {
     const sq = e.currentTarget;
@@ -322,7 +412,7 @@ function askPromotion() {
     };
   });
 }
-async function makeMove(from, to, promotion = false) {
+function makeMove(from, to) {
   let moveStr = "";
   if (from.put) {
     boardState[to.r][to.c] = {t:from.t,p:currentPlayer};
@@ -333,39 +423,7 @@ async function makeMove(from, to, promotion = false) {
     const piece = boardState[from.r][from.c];
     const dest = boardState[to.r][to.c];
     if (!piece) return;
-    let promoted = null;
-    if ((piece.p == "black" && to.r <= 2 && promote[piece.t]) || (piece.p == "white" && to.r >= 6 && promote[piece.t])) {
-      if (promotion) {
-        promoted = true;
-      } else {
-        switch (piece.t) {
-            case 1:
-                if (to.r == reverse(0, piece.p)) {
-                    promoted = true;
-                } else {
-                    promoted = await askPromotion();
-                }
-                break;
-            case 2:
-                if (to.r == reverse(0, piece.p)) {
-                    promoted = true;
-                } else {
-                    promoted = await askPromotion();
-                }
-                break;
-            case 3:
-                if (to.r == reverse(0, piece.p) || to.r == reverse(1, piece.p)) {
-                    promoted = true;
-                } else {
-                    promoted = await askPromotion();
-                }
-                break;
-            default:
-                promoted = await askPromotion();
-                break;
-        }
-      }
-    }
+    let promoted = to.promoted;
     count++;
     if (dest) {
       const captured = { ...dest };
@@ -379,19 +437,26 @@ async function makeMove(from, to, promotion = false) {
     boardState[from.r][from.c] = null;
     moveStr = `${posToSfen(to)}${mapping[boardState[to.r][to.c].t].display}${promoted === null ? "" : promoted ? "成" : "不成"}`;
   }
-  makeHistory(moveStr);
   currentPlayer = currentPlayer === "black" ? "white" : "black";
+
+  const newKomadai = JSON.parse(JSON.stringify(komadai));
+  const newBoardState = boardState.map((row) =>
+    row.map((cell) => (cell ? { ...cell } : null))
+  );
+  boardHistory.push({komadai: newKomadai, boardState: newBoardState, last: [...last], currentPlayer, count});
+  makeHistory(moveStr);
   renderBoard();
   renderKomadai();
   updateTurnUI();
 }
 function minimaxAB(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer) {
+    const currentP = maximizingPlayer ? aiPlayer : (aiPlayer === "black" ? "white" : "black");
+    
     // --- 終端ノード ---
-    if (depth === 0) return evaluate(koma, board, aiPlayer);
+    if (depth === 0) return evaluate(koma, board, aiPlayer, currentP);
 
-    const currentPlayer = maximizingPlayer ? aiPlayer : (aiPlayer === "black" ? "white" : "black");
-    const { moves, change } = getLegalMoves(koma, board, currentPlayer);
-    if (moves.length === 0) return evaluate(koma, board, aiPlayer);
+    const { moves, change } = getLegalMoves(koma, board, currentP);
+    if (moves.length === 0) return evaluate(koma, board, aiPlayer, currentP);
 
     // 探索を制限
     const searchMoves = [...moves.slice(0, change), ...getListRandomly(moves.slice(change))];
@@ -401,7 +466,7 @@ function minimaxAB(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer) 
         let maxEval = -Infinity;
 
         for (const move of searchMoves) {
-            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
+            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
             const evalValue = minimaxAB(newKomadai, newBoard, depth - 1, alpha, beta, false, aiPlayer);
             maxEval = Math.max(maxEval, evalValue);
             alpha = Math.max(alpha, evalValue);
@@ -416,7 +481,7 @@ function minimaxAB(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer) 
         let minEval = Infinity;
 
         for (const move of searchMoves) {
-            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentPlayer);
+            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
             const evalValue = minimaxAB(newKomadai, newBoard, depth - 1, alpha, beta, true, aiPlayer);
             minEval = Math.min(minEval, evalValue);
             beta = Math.min(beta, evalValue);
@@ -446,7 +511,7 @@ async function findBestMove(koma, board, depth, aiPlayer) {
 
     for (const move of searchMoves) {
         const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
-        const value = minimaxAB(newKomadai, newBoard, depth - 1, -Infinity, Infinity, false, aiPlayer) + evaluate(newKomadai, newBoard, aiPlayer);
+        const value = minimaxAB(newKomadai, newBoard, depth - 1, -Infinity, Infinity, false, aiPlayer) + evaluate(newKomadai, newBoard, aiPlayer, aiPlayer == "black" ? "white" : "black");
         for (let i = 0; i < 9; i++) {
           if (i == values.length) {
             values.push({move, value});
@@ -478,11 +543,10 @@ async function findBestMove(koma, board, depth, aiPlayer) {
             titleS.textContent = `${file}${rank}${mapping[e.move.from.t].display}打`;
           } else {
             const piece = boardState[e.move.from.r][e.move.from.c];
-            const promoted = (currentPlayer == "black" &&  e.move.to.r <= 2 && promote[piece.t]) || (currentPlayer == "white" &&  e.move.to.r >= 6 && promote[piece.t]);
             if (last[0] == 9 - e.move.to.c && last[1] == e.move.to.r + 1) {
-              titleS.textContent = `同${mapping[piece.t].display}${promoted ? "成" : ""}`;
+              titleS.textContent = `同${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
             } else {
-              titleS.textContent = `${file}${rank}${mapping[piece.t].display}${promoted ? "成" : ""}`;
+              titleS.textContent = `${file}${rank}${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
             }
           }
           const valueS = document.createElement('h4');
@@ -512,7 +576,10 @@ async function aiMove() {
 }
 function makeAttackMap(board) {
     // attackMap[r][c] = [{p: 'black', t: pieceType}, ...]
-    const attackMap = Array.from({ length: 9 }, () =>
+    const attackerMap = Array.from({ length: 9 }, () =>
+        Array.from({ length: 9 }, () => [])
+    );
+    const defenderMap = Array.from({ length: 9 }, () =>
         Array.from({ length: 9 }, () => [])
     );
 
@@ -524,19 +591,24 @@ function makeAttackMap(board) {
             // その駒の全ての攻撃可能マスを取得
             const moves = getMoveList(board, r, c, true); 
             for (const [rr, cc] of moves) {
-                if (rr < 0 || rr >= 9 || cc < 0 || cc >= 9) continue;
-                attackMap[rr][cc].push({ p: piece.p, t: piece.t });
+                if (rr < 0 || rr >= 9 || cc < 0 || cc >= 9 || board[rr][cc] === null) continue;
+                if (board[rr][cc].p == piece.p) {
+                  defenderMap.push({ p: piece.p, t: piece.t, pos: { r, c } });
+                } else {
+                  attackerMap.push({ p: piece.p, t: piece.t, pos: { r, c } });
+                }
             }
         }
     }
-    return attackMap;
+    return {attackerMap, defenderMap};
 }
 let moveV = 2;
 let pena = 1;
 let komaV = 3;
-function evaluate(koma, board, p) {
+// && attackers.every(e => defenders[e.pos.r)
+function evaluate(koma, board, p, nowP) {
     let score = 300; //げた
-    const attackMap = makeAttackMap(board); // 全マスがどちらに攻撃されているか
+    const { attackerMap, defenderMap } = makeAttackMap(board);
 
     for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
@@ -548,15 +620,16 @@ function evaluate(koma, board, p) {
             let v = Math.floor(baseValue * moveV);
 
             // 駒の安全性評価
-            const attackers = attackMap[r][c].filter(a => a.p !== piece.p);
-            const defenders = attackMap[r][c].filter(a => a.p === piece.p);
+            const attackers = attackerMap[r][c];
+            const defenders = defenderMap[r][c];
             
             // ---- ただ取りペナルティ ----
             if (attackers.length > 0) {
-              if (attackers.some(a => (mapping[a.t].value < mapping[piece.t].value)) && attackers.length >= 2) {
+              if (attackers.some(a => (mapping[a.t].value < mapping[piece.t].value) && a.p === nowP)) {
                 v -= (baseValue + 30) * pena;
               }
               if (defenders.length == 0) {
+                if (!attackers.some(a => defenders[a.pos.r][a.pos.c].length == 0 && piece.p === nowP))
                 v -= (baseValue + 50) * pena;
               }
             } else {
@@ -564,7 +637,7 @@ function evaluate(koma, board, p) {
             }
             if (defenders.length > attackers.length) {
                 // 守られている
-                v += Math.floor(baseValue * 0.2);
+                v += Math.floor(baseValue * 0.1);
             }
 
 
@@ -603,7 +676,7 @@ function makeMoveSim(koma, board, move, p) {
       const dest = newBoard[move.to.r][move.to.c];
       const piece = newBoard[move.from.r][move.from.c];
       newBoard[move.to.r][move.to.c] = newBoard[move.from.r][move.from.c];
-      if ((move.to.r <= 2 && p == 'black' && promote[piece.t]) || (move.to.r >= 6 && p == 'white' && promote[piece.t])) {
+      if (move.to.promoted) {
         newBoard[move.to.r][move.to.c].t = promote[piece.t];
       }
       if (dest) {
@@ -669,7 +742,6 @@ window.getCurrentPlayer = () => currentPlayer;
 window.doMove = (from, to) => {
   makeMove(from, to);
 };
-window.getHistory = () => history;
 window.getKomadai = () => komadai;
 console.log(
   "将棋GUIロード完了。window.getBoardState(), window.doMove({r,c},{r,c}) などを使えます。"

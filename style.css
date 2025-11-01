@@ -119,6 +119,7 @@ h1 {
   z-index: 2;
 }
 .side {
+  margin: 15px 0;
   width: 100%;
 }
 .komadai,
