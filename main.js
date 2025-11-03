@@ -29,6 +29,25 @@ const initialSetup = [
 [ null,{t:6,p:'black'},null,null,null,null,null,{t:7,p:'black'},null ],
 [ {t:2,p:'black'},{t:3,p:'black'},{t:4,p:'black'},{t:5,p:'black'},{t:14,p:'black'},{t:5,p:'black'},{t:4,p:'black'},{t:3,p:'black'},{t:2,p:'black'} ],
 ];
+const onlyKingsBoard = [
+  [null,null,null,null,{t:15,p:'white'},null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,{t:14,p:'black'},null,null,null,null],
+];
+const onlyKingsKomadai = {
+  black: {1:9, 2:2, 3:2, 4:2, 5:2, 6:1, 7:1},
+  white: {1:9, 2:2, 3:2, 4:2, 5:2, 6:1, 7:1}
+};
+const allKomadai = {
+  black: {},
+  white: {1:18, 2:4, 3:4, 4:4, 5:4, 6:2, 7:2}
+};
 const promote = [false,8,9,10,11,false,12,13,false,false,false,false,false,false,false,false];
 const toJa = {1:["１","一"],2:["２","二"],3:["３","三"],4:["４","四"],5:["５","五"],6:["６","六"],7:["７","七"],8:["８","八"],9:["９","九"]};
 const masuValue = [
@@ -41,7 +60,9 @@ const masuValue = [
 [1,1,1,1,1,1,1,1,1],
 [3,3,3,3,3,3,3,3,3],
 [3,3,3,3,3,3,3,3,3]
-]
+];
+let onlyKings = true;
+let allKoma = true;
 let boardHistory = [];
 let searchDepth = 4;
 let maxPutWidth = 30;
@@ -62,21 +83,26 @@ const komadaiBlackEl = document.getElementById("komadai-black");
 const komadaiWhiteEl = document.getElementById("komadai-white");
 const modal = document.getElementById('modal');
 const aiDiv = document.getElementById('ai');
-function deepCopySetup() {
-  return initialSetup.map((row) =>
-    row.map((cell) => (cell ? { ...cell } : null))
-  );
-}
 function init() {
   boardHistory = [];
-  boardState = deepCopySetup();
+  boardState = cloneBoard(onlyKings ? onlyKingsBoard : initialSetup);
   last = [-1,-1];
   currentPlayer = "white";
   selected = null;
   count = 0;
   put = null;
-  komadai.black = {};
-  komadai.white = {};
+  if (onlyKings) {
+    if (allKoma) {
+      komadai.black = allKomadai.black;
+      komadai.white = allKomadai.white;
+    } else {
+      komadai.black = onlyKingsKomadai.black;
+      komadai.white = onlyKingsKomadai.white;
+    }
+  } else {
+    komadai.black = {};
+    komadai.white = {};
+  }
   nowMoves = getLegalMoves(komadai, boardState, currentPlayer).moves;
   possibleMoves = [];
   historyEl.innerHTML = '';
@@ -334,7 +360,7 @@ function onKomadaiClick(e) {
         selected = null;
         sq.classList.add("selected");
         put = t;
-        possibleMoves = nowMoves.filter(e => e.from.put === true && e.from.t === t && e.from.p === currentPlayer);
+        possibleMoves = nowMoves.filter(e => e.from.put === true && e.from.t === t);
         possibleMoves.forEach(move => {
           document.querySelector(`.square[data-r='${move.to.r}'][data-c='${move.to.c}']`).classList.add("highlight");
         })
@@ -391,10 +417,8 @@ async function makeMove(from, to) {
   }
   currentPlayer = currentPlayer === "black" ? "white" : "black";
 
-  const newKomadai = JSON.parse(JSON.stringify(komadai));
-  const newBoardState = boardState.map((row) =>
-    row.map((cell) => (cell ? { ...cell } : null))
-  );
+  const newKomadai = cloneKomadai(komadai);
+  const newBoardState = cloneBoard(boardState)
   boardHistory.push({komadai: newKomadai, boardState: newBoardState, last: [...last], currentPlayer, count});
   makeHistory(moveStr);
   renderBoard();
@@ -547,8 +571,8 @@ async function findBestMove(koma, board, depth, aiPlayer) {
         //ユーザーに表示
         aiDiv.innerHTML = '';
         let n = 10;
+        n--;
         for (const e of values) {
-          n--;
           const shotDiv = document.createElement('div');
           shotDiv.className = 'shot';
           const titleS = document.createElement('h3');
@@ -586,10 +610,82 @@ async function findBestMove(koma, board, depth, aiPlayer) {
 async function aiMove() {
     aiDiv.innerHTML = '';
     const aiPlayer = currentPlayer;
-    findBestMove(komadai, boardState, searchDepth, aiPlayer).then(bestMove => {
-      console.log(bestMove);
-      if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to, true);
+    const promise = findBestMove(komadai, boardState, searchDepth, aiPlayer);
+    const {mate, entry} = findMateDFPN(komadai, boardState, aiPlayer);
+    let matePro = [];
+    if (mate) {
+      let node = entry;
+      while(true) {
+        console.log(matePro);
+        if (node.children || node.children.length === 0) {
+          const { move } = node.parentMove;
+          matePro.push(move);
+          break;
+        } else {
+          const { move, index } = node.bestMove === null ? {move: node.children[0].parentMove.move, index: 0} : node.bestMove;
+          matePro.push(move);
+          node = node.children[index]; // 次のノードに進む
+        }
+      }
+    }
+    promise.then(bestMove => {
+      if (mate) {
+        const move = matePro[0];
+        console.log(move, matePro);
+        aiDiv.innerHTML = '';
+        const mateDiv = document.createElement('div');
+        mateDiv.className = 'shot mate';
+        const titleS = document.createElement('h3');
+        titleS.className = 'title';
+        const file = toJa[move.to.c][0];
+        const rank = toJa[move.to.r][1];
+        if(move.from.put) {
+          titleS.textContent = `${file}${rank}${mapping[move.from.t].display}打`;
+        } else {
+          const piece = boardState[move.from.r][move.from.c];
+          if (last[0] == 9 - move.to.c && last[1] == move.to.r + 1) {
+            titleS.textContent = `同${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
+          } else {
+            titleS.textContent = `${file}${rank}${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
+          }
+        }
+        const valueS = document.createElement('h4');
+        valueS.className = 'value';
+        valueS.textContent = `#-${matePro.length - 1}`;
+        mateDiv.appendChild(titleS);
+        mateDiv.appendChild(valueS);
+        aiDiv.appendChild(mateDiv);
+      } else {
+        console.log(bestMove);
+        if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to, true);
+      }
     });
+    /*
+    if (mate) {
+          const shotDiv = document.createElement('div');
+          shotDiv.className = 'shot';
+          const titleS = document.createElement('h3');
+          titleS.className = 'title';
+          const file = toJa[9 - e.move.to.c][0];
+          const rank = toJa[e.move.to.r + 1][1];
+          if(e.move.from.put) {
+            titleS.textContent = `${file}${rank}${mapping[e.move.from.t].display}打`;
+          } else {
+            const piece = boardState[e.move.from.r][e.move.from.c];
+            if (last[0] == 9 - e.move.to.c && last[1] == e.move.to.r + 1) {
+              titleS.textContent = `同${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
+            } else {
+              titleS.textContent = `${file}${rank}${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
+            }
+          }
+          const valueS = document.createElement('h4');
+          valueS.className = 'value';
+          valueS.textContent = e.value + ' 点';
+          shotDiv.appendChild(titleS);
+          shotDiv.appendChild(valueS);
+          aiDiv.appendChild(shotDiv);
+      
+    }*/
 }
 function makeAttackMap(board) {
     // attackMap[r][c] = [{p: 'black', t: pieceType}, ...]
@@ -681,14 +777,330 @@ function evaluate(koma, board, p, nowP) {
 
     return score;
 }
-
-// === 盤面のコピー関数 ===
+/* -------------------- 盤面コピー関数 -------------------- */
 function cloneBoard(board) {
-    return board.map(row => row.map(cell => cell ? {...cell} : null));
+  return board.map(row => row.map(cell => cell ? {...cell} : null));
 }
+
+function cloneKomadai(koma) {
+  const newKomadai = {};
+  for (const player of Object.keys(koma)) {
+    newKomadai[player] = {...koma[player]};
+  }
+  return newKomadai;
+}
+
+/* -------------------- Zobrist Hash -------------------- */
+function randomBigInt() {
+  const hi = BigInt(Math.floor(Math.random() * 2 ** 32));
+  const lo = BigInt(Math.floor(Math.random() * 2 ** 32));
+  return (hi << 32n) ^ lo;
+}
+
+// Zobrist tables
+const PIECE_TYPES = 16;
+const MAX_HAND = 18;
+const zobristTable = Array.from({length: 9}, () =>
+  Array.from({length: 9}, () =>
+    Array.from({length: PIECE_TYPES}, () => [randomBigInt(), randomBigInt()])
+  )
+);
+const zobristHand = { black: {}, white: {} };
+for (const p of ["black","white"]) {
+  for (let t = 0; t < PIECE_TYPES; t++) {
+    zobristHand[p][t] = [];
+    for (let n = 0; n <= MAX_HAND; n++) {
+      zobristHand[p][t][n] = randomBigInt();
+    }
+  }
+}
+const zobristTurn = randomBigInt();
+
+function generateHash(koma, board, turn) {
+  let hash = 0n;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const piece = board[r][c];
+      if (piece) {
+        const t = piece.t;
+        const ownerIndex = piece.p === "black" ? 0 : 1;
+        hash ^= zobristTable[r][c][t][ownerIndex];
+      }
+    }
+  }
+  for (const p of ["black","white"]) {
+    for (const t in koma[p]) {
+      const count = koma[p][t];
+      if (count > 0) hash ^= zobristHand[p][t][count];
+    }
+  }
+  if (turn === "white") hash ^= zobristTurn;
+  return hash;
+}
+
+/* -------------------- Transposition Table -------------------- */
+const TT = new Map();
+function ttGet(hash) { return TT.get(hash); }
+function ttSet(hash, entry) { TT.set(hash, entry); return entry; }
+
+/* -------------------- Node生成 -------------------- */
+function makeNodeIfAbsent(koma, board, turn, rootAttackSide) {
+  const hash = generateHash(koma, board, turn);
+  let entry = ttGet(hash);
+  if (!entry) {
+    entry = {
+      hash,
+      pn: 1,
+      dn: 1,
+      status: 'UNEXPANDED',
+      children: null,
+      bestMove: null,
+      turn,
+      board,
+      koma,
+      rootAttackSide,
+      depthes: []
+    };
+    ttSet(hash, entry);
+  }
+  return entry;
+}
+
+/* -------------------- 王手判定 -------------------- */
+function hasCheckMove(board, attacker, defender) {
+  let kingPos = null;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = board[r][c];
+      if (cell && cell.p === defender && (cell.t === 14 || cell.t === 15)) {
+        kingPos = [r,c]; break;
+      }
+    }
+    if (kingPos) break;
+  }
+  if (!kingPos) return false;
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = board[r][c];
+      if (!cell || cell.p !== attacker) continue;
+      const moves = getMoveList(board, r, c);
+      for (const [tr, tc] of moves) {
+        if (tr === kingPos[0] && tc === kingPos[1]) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/* -------------------- moveシミュレーション -------------------- */
+function makeMoveSim(koma, board, move, p) {
+  const newBoard = cloneBoard(board);
+  const newKomadai = cloneKomadai(koma);
+
+  if (move.from.put) {
+    if (newKomadai[p][move.from.t] && newKomadai[p][move.from.t] > 0) {
+      newBoard[move.to.r][move.to.c] = { t: move.from.t, p };
+      newKomadai[p][move.from.t]--;
+      if (newKomadai[p][move.from.t] === 0) delete newKomadai[p][move.from.t];
+    }
+  } else {
+    const dest = newBoard[move.to.r][move.to.c];
+    const piece = newBoard[move.from.r][move.from.c];
+    newBoard[move.to.r][move.to.c] = { ...piece };
+    if (move.to.promoted) newBoard[move.to.r][move.to.c].t = promote[piece.t];
+    if (dest) {
+      const base = demote(dest.t);
+      const owner = piece.p;
+      if (!newKomadai[owner][base]) newKomadai[owner][base] = 0;
+      newKomadai[owner][base]++;
+    }
+    newBoard[move.from.r][move.from.c] = null;
+  }
+  return { newBoard, newKomadai };
+}
+function scoreMove(koma, board, move, turn) {
+  //const dest = board[move.to.r][move.to.c];
+  let score = move.from.put ? 150 + pieceValue(move.from.t) : 100;
+  // 王手ならさらに加点
+  /*const { newBoard } = makeMoveSim(koma, board, move, turn);
+  if (hasCheckMove(newBoard, turn, turn === 'black' ? 'white' : 'black')) {
+    score += 100;
+  }*/
+  return score;
+}
+
+function pieceValue(type) {
+  switch(type){
+    case 14: case 15: return 1000; // 王は大きく
+    case 5: return 9; // 金
+    case 4: return 5; // 銀
+    case 3: return 3; // 桂馬
+    case 2: return 3; // 香
+    case 1: return 1; // 歩
+    default: return 0;
+  }
+}
+let considerAllMoves = false;
+/* -------------------- PN/DN計算 -------------------- */
+function expandAndComputePnDn(entry, depth) {
+  if (entry.status === 'PROVED' || entry.status === 'DISPROVED') return;
+
+  const { moves } = getLegalMoves(entry.koma, entry.board, entry.turn);
+  const legalMoves = entry.turn === entry.rootAttackSide
+    ? moves.filter(move => {
+        const { newBoard } = makeMoveSim(entry.koma, entry.board, move, entry.turn);
+        return hasCheckMove(newBoard, entry.turn, entry.turn === 'black' ? 'white' : 'black');
+      })
+    : moves;
+
+  if (legalMoves.length === 0) {
+    if (entry.turn === entry.rootAttackSide) {
+      entry.pn = Infinity; entry.dn = 0; entry.status = 'DISPROVED';
+    } else {
+      entry.pn = 0; entry.dn = Infinity; entry.status = 'PROVED';
+    }
+    entry.children = [];
+    return;
+  }
+  if (!entry.children) {
+    entry.children = [];
+    for (const move of legalMoves) {
+      const { newBoard, newKomadai } = makeMoveSim(entry.koma, entry.board, move, entry.turn);
+      const childHash = generateHash(newKomadai, newBoard, entry.turn === 'black' ? 'white' : 'black');
+      let child = ttGet(childHash);
+      if (!child) {
+        child = makeNodeIfAbsent(newKomadai, newBoard,
+          entry.turn === 'black' ? 'white' : 'black',
+          entry.rootAttackSide
+        );
+        child.depthes.push(depth + 1);
+        ttSet(childHash, child);
+      } else {
+        child.depthes.push(depth + 1);
+        ttSet(childHash, child);
+      }
+      entry.children.push({child, move});
+      child.parentMove = { index: entry.children.length - 1, move };
+    }
+
+    // 攻め側なら王手や駒取りを優先
+    if (entry.turn === entry.rootAttackSide) {
+      entry.children.sort((a, b) => {
+        const aScore = scoreMove(entry.koma, entry.board, a.move, entry.turn);
+        const bScore = scoreMove(entry.koma, entry.board, b.move, entry.turn);
+        return bScore - aScore; // 高いスコアを前に
+      });
+    }
+    
+    entry.children.forEach((c, i) => {
+      c.child.parentMove.index = i;
+    });
+
+    // ソート後に child だけの配列に変換
+    entry.children = entry.children.map(e => e.child);
+  }
+
+  let bestMove = null;
+  if (entry.turn === entry.rootAttackSide) {
+    entry.pn = Infinity; entry.dn = 0;
+    for (const c of entry.children) {
+      if (c.pn < entry.pn) {
+        entry.pn = c.pn;
+        bestMove = c.parentMove;
+      }
+      entry.dn += c.dn;
+    }
+  } else {
+    entry.pn = 0; entry.dn = Infinity;
+    for (const c of entry.children) {
+      entry.pn += c.pn;
+      if (c.dn < entry.dn) {
+        entry.dn = c.dn;
+        bestMove = c.parentMove;
+      }
+    }
+  }
+
+  entry.bestMove = bestMove;
+  entry.status = 'EXPANDED';
+}
+// 千日手検出に使う出現回数（将棋では 4 回で千日手判定することが多い）
+let REP_LIMIT = 4;
+/* -------------------- DF-PN with TCA -------------------- */
+function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0) {
+  expandAndComputePnDn(entry, depth);
+  console.log(thpn, thdn, entry.pn, entry.dn, depth, inc_flag);
+  if (entry.status === 'PROVED' || entry.status === 'DISPROVED') return;
+  firstTime = true;
+  while (true) {
+    if (entry.status === 'UNEXPENDED') inc_flag = false;
+    if (entry.children.some(e => {
+      const hash = generateHash(e.koma, e.board, e.turn);
+      return ttGet(hash).depthes.some(d => d < depth);
+    }) && firstTime) {
+      inc_flag = true;
+      /*
+      if (entry.turn !== entry.rootAttackSide) {
+        entry.pn = Infinity;
+        entry.dn = 0;
+      } else {
+        entry.pn = 0;
+        entry.dn = Infinity;
+      }
+      console.log(entry, 'roop');
+      break;*/
+    }
+
+    expandAndComputePnDn(entry, depth);
+
+    const nonTerminal = entry.children.filter(c=>c.status!=='PROVED' && c.status!=='DISPROVED');
+    if (nonTerminal.length === 0) break;
+    if (firstTime && inc_flag) {
+        thpn = Math.max(thpn, entry.pn + 1); 
+        thdn = Math.max(thdn, entry.dn + 1);
+        console.log('roop'); 
+    }
+
+    if (entry.pn>=thpn || entry.dn>=thdn) break;
+
+    firstTime = false;
+
+    let bestChild=null, secondBestChild=null;
+    if (entry.turn === entry.rootAttackSide) {
+      nonTerminal.forEach(c=>{
+        if (!bestChild || c.pn < bestChild.pn) { secondBestChild = bestChild; bestChild=c; }
+        else if (!secondBestChild || c.pn < secondBestChild.pn) secondBestChild = c;
+      });
+      if (!secondBestChild) secondBestChild=bestChild;
+      DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn+1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1);
+    } else {
+      nonTerminal.forEach(c=>{
+        if (!bestChild || c.dn < bestChild.dn) { secondBestChild = bestChild; bestChild=c; }
+        else if (!secondBestChild || c.dn < secondBestChild.dn) secondBestChild = c;
+      });
+      if (!secondBestChild) secondBestChild=bestChild;
+      DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn+1), inc_flag, depth + 1);
+    }
+
+  }
+}
+
+/* -------------------- Root -------------------- */
+function findMateDFPN(koma, board, attacker) {
+  const rootEntry = makeNodeIfAbsent(koma, board, attacker, attacker);
+  rootEntry.depthes.push(0);
+  let thpn = Number.MAX_SAFE_INTEGER, thdn = Number.MAX_SAFE_INTEGER;
+  DFPNwithTCA(rootEntry, thpn, thdn, false);
+  return {
+    mate: rootEntry.pn === 0 ? true : rootEntry.dn === 0 ? false : null,
+    entry: rootEntry
+  };
+}
+
 function makeMoveSim(koma, board, move, p) {
     const newBoard = cloneBoard(board);
-    const newKomadai = JSON.parse(JSON.stringify(koma));
+    const newKomadai = cloneKomadai(koma);
     if (move.from.put) {//
     if (newKomadai[p][move.from.t] || newKomadai[p][move.from.t] > 0) {
         newBoard[move.to.r][move.to.c] = {t:move.from.t, p: p};
