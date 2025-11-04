@@ -551,6 +551,7 @@ async function findBestMove(koma, board, depth, aiPlayer) {
     let values = [];
     let bestMove = null;
     let bestValue = -Infinity;
+    let n = 5;
     const searchMoves = [...moves.slice(0,change), ...getListRandomly(moves.slice(change))];
 
     for (const move of searchMoves) {
@@ -574,40 +575,43 @@ async function findBestMove(koma, board, depth, aiPlayer) {
         }
         //ユーザーに表示
         aiDiv.innerHTML = '';
-        let n = 10;
         n--;
-        for (const e of values) {
-          const shotDiv = document.createElement('div');
-          shotDiv.className = 'shot';
-          const titleS = document.createElement('h3');
-          titleS.className = 'title';
-          const file = toJa[9 - e.move.to.c][0];
-          const rank = toJa[e.move.to.r + 1][1];
-          if(e.move.from.put) {
-            titleS.textContent = `${file}${rank}${mapping[e.move.from.t].display}打`;
-          } else {
-            const piece = boardState[e.move.from.r][e.move.from.c];
-            if (last[0] == 9 - e.move.to.c && last[1] == e.move.to.r + 1) {
-              titleS.textContent = `同${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
-            } else {
-              titleS.textContent = `${file}${rank}${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
-            }
-          }
-          const valueS = document.createElement('h4');
-          valueS.className = 'value';
-          valueS.textContent = e.value + ' 点';
-          shotDiv.appendChild(titleS);
-          shotDiv.appendChild(valueS);
-          aiDiv.appendChild(shotDiv);
-          if (n <= 0) {
-            await new Promise(resolve => setTimeout(resolve, 1));
-            n = 10;
-          }
+        if (n <= 0) {
+          n = 10;
+          await renderDiv(values);
+          
         }
       }
-      await new Promise(resolve => setTimeout(resolve, 1));
+      await renderDiv(values);
 
     return values[0].move;
+}
+async function renderDiv(values) {
+for (const e of values) {
+            const shotDiv = document.createElement('div');
+            shotDiv.className = 'shot';
+            const titleS = document.createElement('h3');
+            titleS.className = 'title';
+            const file = toJa[9 - e.move.to.c][0];
+            const rank = toJa[e.move.to.r + 1][1];
+            if(e.move.from.put) {
+              titleS.textContent = `${file}${rank}${mapping[e.move.from.t].display}打`;
+            } else {
+              const piece = boardState[e.move.from.r][e.move.from.c];
+              if (last[0] == 9 - e.move.to.c && last[1] == e.move.to.r + 1) {
+                titleS.textContent = `同${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
+              } else {
+                titleS.textContent = `${file}${rank}${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
+              }
+            }
+            const valueS = document.createElement('h4');
+            valueS.className = 'value';
+            valueS.textContent = e.value + ' 点';
+            shotDiv.appendChild(titleS);
+            shotDiv.appendChild(valueS);
+            aiDiv.appendChild(shotDiv);
+            await new Promise(resolve => setTimeout(resolve, 1));
+          }
 }
 
 // === AIのターンを実行 ===
