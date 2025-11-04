@@ -62,6 +62,7 @@ const masuValue = [
 [3,3,3,3,3,3,3,3,3]
 ];
 
+
 let onlyKings = false;
 let allKoma = false;
 let boardHistory = [];
