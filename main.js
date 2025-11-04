@@ -435,7 +435,7 @@ async function makeMove(from, to) {
   if (nowMoves.length === 0) {
       const checked = isKingInCheck(boardState, currentPlayer);
       if (checked) {
-        alert(`${currentPlayer == "white" ? "先手" : "後手"} の勝ちです。`);
+        alert(`${currentPlayer == "black" ? "先手" : "後手"} の勝ちです。`);
       } else {
           // ステイルメイト（千日手など）→引き分け扱い
         alert("引き分けです。");
@@ -617,7 +617,7 @@ async function aiMove() {
       let node = entry;
       while(true) {
         console.log(matePro);
-        if (node.children || node.children.length === 0) {
+        if (!node.children || node.children.length === 0) {
           const { move } = node.parentMove;
           matePro.push(move);
           break;
@@ -637,8 +637,8 @@ async function aiMove() {
         mateDiv.className = 'shot mate';
         const titleS = document.createElement('h3');
         titleS.className = 'title';
-        const file = toJa[move.to.c][0];
-        const rank = toJa[move.to.r][1];
+        const file = toJa[9 - move.to.c][0];
+        const rank = toJa[move.to.r + 1][1];
         if(move.from.put) {
           titleS.textContent = `${file}${rank}${mapping[move.from.t].display}打`;
         } else {
@@ -1027,43 +1027,56 @@ function expandAndComputePnDn(entry, depth) {
 }
 // 千日手検出に使う出現回数（将棋では 4 回で千日手判定することが多い）
 let REP_LIMIT = 4;
-/* -------------------- DF-PN with TCA -------------------- */
-function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0) {
+// DFPNwithTCA に pathMap（ハッシュ->出現回数）を追加
+function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0, pathMap = new Map()) {
+  // 現ノードのハッシュをパスに追加
+  const myHash = entry.hash || generateHash(entry.koma, entry.board, entry.turn);
+  entry.hash = myHash; // キャッシュしておく
+
+  // 増やしておく（現ノードが経路上で何回出たか）
+  const prevCount = pathMap.get(myHash) || 0;
+  pathMap.set(myHash, prevCount + 1);
+
+  // もしこの段階で出現回数が REP_LIMIT 以上なら千日手扱いにする
+  if (pathMap.get(myHash) >= REP_LIMIT) {
+    // 千日手が見つかった。詰み探索における扱いを決める：
+    // ここでは「攻め側の詰め筋を否定する（DISPROVED）扱い」にする実装例
+    if (entry.turn === entry.rootAttackSide) {
+      entry.pn = Infinity; entry.dn = 0; entry.status = 'DISPROVED';
+    } else {
+      // 守側の手番で千日手になったなら攻め側に有利かも知れないが
+      // 簡潔化のため「PROVED」として扱う（必要ならルールで調整）
+      entry.pn = 0; entry.dn = Infinity; entry.status = 'PROVED';
+    }
+    // パスのカウントを戻して return
+    pathMap.set(myHash, prevCount);
+    return;
+  }
+
+  // 通常の処理（既存実装）
   expandAndComputePnDn(entry, depth);
-  console.log(thpn, thdn, entry.pn, entry.dn, depth, inc_flag);
-  if (entry.status === 'PROVED' || entry.status === 'DISPROVED') return;
-  firstTime = true;
+  if (entry.status === 'PROVED' || entry.status === 'DISPROVED') {
+    pathMap.set(myHash, prevCount); // 復帰前にカウントを戻す
+    return;
+  }
+
+  console.log(thpn, thdn, entry.pn, entry.dn, inc_flag, depth);
+
+  // （以下は元の while ループをそのまま使うが、再帰呼び出しには pathMap を渡す）
+  let firstTime = true;
   while (true) {
     if (entry.status === 'UNEXPENDED') inc_flag = false;
-    if (entry.children.some(e => {
-      const hash = generateHash(e.koma, e.board, e.turn);
-      return ttGet(hash).depthes.some(d => d < depth);
-    }) && firstTime) {
-      inc_flag = true;
-      /*
-      if (entry.turn !== entry.rootAttackSide) {
-        entry.pn = Infinity;
-        entry.dn = 0;
-      } else {
-        entry.pn = 0;
-        entry.dn = Infinity;
-      }
-      console.log(entry, 'roop');
-      break;*/
-    }
 
+    // 既存の TCA 用の判定など
     expandAndComputePnDn(entry, depth);
-
     const nonTerminal = entry.children.filter(c=>c.status!=='PROVED' && c.status!=='DISPROVED');
     if (nonTerminal.length === 0) break;
     if (firstTime && inc_flag) {
         thpn = Math.max(thpn, entry.pn + 1); 
         thdn = Math.max(thdn, entry.dn + 1);
-        console.log('roop'); 
     }
 
-    if (entry.pn>=thpn || entry.dn>=thdn) break;
-
+    if (entry.pn >= thpn || entry.dn >= thdn) break;
     firstTime = false;
 
     let bestChild=null, secondBestChild=null;
@@ -1073,19 +1086,22 @@ function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0) {
         else if (!secondBestChild || c.pn < secondBestChild.pn) secondBestChild = c;
       });
       if (!secondBestChild) secondBestChild=bestChild;
-      DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn+1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1);
+      // 再帰呼び出し：pathMap を渡す（コピーではなく同じ Map を渡して、呼び出し側で復帰時に戻す）
+      DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn+1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1, pathMap);
     } else {
       nonTerminal.forEach(c=>{
         if (!bestChild || c.dn < bestChild.dn) { secondBestChild = bestChild; bestChild=c; }
         else if (!secondBestChild || c.dn < secondBestChild.dn) secondBestChild = c;
       });
       if (!secondBestChild) secondBestChild=bestChild;
-      DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn+1), inc_flag, depth + 1);
+      DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn+1), inc_flag, depth + 1, pathMap);
     }
-
   }
-}
 
+  // 関数を抜ける直前に pathMap のカウントを戻す
+  pathMap.set(myHash, prevCount);
+  if (prevCount === 0) pathMap.delete(myHash);
+}
 /* -------------------- Root -------------------- */
 function findMateDFPN(koma, board, attacker) {
   const rootEntry = makeNodeIfAbsent(koma, board, attacker, attacker);
