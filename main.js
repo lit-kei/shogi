@@ -61,8 +61,8 @@ const masuValue = [
 [3,3,3,3,3,3,3,3,3],
 [3,3,3,3,3,3,3,3,3]
 ];
-let onlyKings = true;
-let allKoma = true;
+let onlyKings = false;
+let allKoma = false;
 let boardHistory = [];
 let searchDepth = 4;
 let maxPutWidth = 30;
@@ -73,6 +73,7 @@ let currentPlayer = "white";
 let selected = null;
 let count = 0;
 let put = null;
+let finish = true;
 let nowMoves = [];
 let possibleMoves = [];
 const komadai = { black: {}, white: {} };
@@ -91,6 +92,7 @@ function init() {
   selected = null;
   count = 0;
   put = null;
+  finsih = true;
   if (onlyKings) {
     if (allKoma) {
       komadai.black = allKomadai.black;
@@ -611,6 +613,11 @@ async function aiMove() {
     aiDiv.innerHTML = '';
     const aiPlayer = currentPlayer;
     const promise = findBestMove(komadai, boardState, searchDepth, aiPlayer);
+    promise.then(bestMove => {
+      console.log(bestMove);
+      if (aiMode[aiPlayer]) makeMove(bestMove.from, bestMove.to);
+    })
+    /*
     const {mate, entry} = findMateDFPN(komadai, boardState, aiPlayer);
     let matePro = [];
     if (mate) {
@@ -657,9 +664,9 @@ async function aiMove() {
         aiDiv.appendChild(mateDiv);
       } else {
         console.log(bestMove);
-        if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to, true);
+        if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to);
       }
-    });
+    });*/
     /*
     if (mate) {
           const shotDiv = document.createElement('div');
@@ -1028,86 +1035,81 @@ function expandAndComputePnDn(entry, depth) {
 // 千日手検出に使う出現回数（将棋では 4 回で千日手判定することが多い）
 let REP_LIMIT = 4;
 // DFPNwithTCA に pathMap（ハッシュ->出現回数）を追加
-function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0, pathMap = new Map()) {
+/* -------------------- async版 DFPNwithTCA -------------------- */
+async function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0, pathMap = new Map()) {
+  if (finish) return; // 停止チェック
+
   // 現ノードのハッシュをパスに追加
   const myHash = entry.hash || generateHash(entry.koma, entry.board, entry.turn);
-  entry.hash = myHash; // キャッシュしておく
+  entry.hash = myHash;
 
-  // 増やしておく（現ノードが経路上で何回出たか）
   const prevCount = pathMap.get(myHash) || 0;
   pathMap.set(myHash, prevCount + 1);
 
-  // もしこの段階で出現回数が REP_LIMIT 以上なら千日手扱いにする
   if (pathMap.get(myHash) >= REP_LIMIT) {
-    // 千日手が見つかった。詰み探索における扱いを決める：
-    // ここでは「攻め側の詰め筋を否定する（DISPROVED）扱い」にする実装例
     if (entry.turn === entry.rootAttackSide) {
       entry.pn = Infinity; entry.dn = 0; entry.status = 'DISPROVED';
     } else {
-      // 守側の手番で千日手になったなら攻め側に有利かも知れないが
-      // 簡潔化のため「PROVED」として扱う（必要ならルールで調整）
       entry.pn = 0; entry.dn = Infinity; entry.status = 'PROVED';
     }
-    // パスのカウントを戻して return
     pathMap.set(myHash, prevCount);
     return;
   }
 
-  // 通常の処理（既存実装）
   expandAndComputePnDn(entry, depth);
   if (entry.status === 'PROVED' || entry.status === 'DISPROVED') {
-    pathMap.set(myHash, prevCount); // 復帰前にカウントを戻す
+    pathMap.set(myHash, prevCount);
     return;
   }
 
-  console.log(thpn, thdn, entry.pn, entry.dn, inc_flag, depth);
-
-  // （以下は元の while ループをそのまま使うが、再帰呼び出しには pathMap を渡す）
   let firstTime = true;
-  while (true) {
+  while (!finish) { // 停止チェックつきループ
     if (entry.status === 'UNEXPENDED') inc_flag = false;
 
-    // 既存の TCA 用の判定など
     expandAndComputePnDn(entry, depth);
-    const nonTerminal = entry.children.filter(c=>c.status!=='PROVED' && c.status!=='DISPROVED');
+    const nonTerminal = entry.children.filter(c => c.status !== 'PROVED' && c.status !== 'DISPROVED');
     if (nonTerminal.length === 0) break;
+
     if (firstTime && inc_flag) {
-        thpn = Math.max(thpn, entry.pn + 1); 
-        thdn = Math.max(thdn, entry.dn + 1);
+      thpn = Math.max(thpn, entry.pn + 1);
+      thdn = Math.max(thdn, entry.dn + 1);
     }
 
     if (entry.pn >= thpn || entry.dn >= thdn) break;
     firstTime = false;
 
-    let bestChild=null, secondBestChild=null;
+    let bestChild = null, secondBestChild = null;
     if (entry.turn === entry.rootAttackSide) {
-      nonTerminal.forEach(c=>{
-        if (!bestChild || c.pn < bestChild.pn) { secondBestChild = bestChild; bestChild=c; }
+      nonTerminal.forEach(c => {
+        if (!bestChild || c.pn < bestChild.pn) { secondBestChild = bestChild; bestChild = c; }
         else if (!secondBestChild || c.pn < secondBestChild.pn) secondBestChild = c;
       });
-      if (!secondBestChild) secondBestChild=bestChild;
-      // 再帰呼び出し：pathMap を渡す（コピーではなく同じ Map を渡して、呼び出し側で復帰時に戻す）
-      DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn+1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1, pathMap);
+      if (!secondBestChild) secondBestChild = bestChild;
+      await DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn + 1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1, pathMap);
     } else {
-      nonTerminal.forEach(c=>{
-        if (!bestChild || c.dn < bestChild.dn) { secondBestChild = bestChild; bestChild=c; }
+      nonTerminal.forEach(c => {
+        if (!bestChild || c.dn < bestChild.dn) { secondBestChild = bestChild; bestChild = c; }
         else if (!secondBestChild || c.dn < secondBestChild.dn) secondBestChild = c;
       });
-      if (!secondBestChild) secondBestChild=bestChild;
-      DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn+1), inc_flag, depth + 1, pathMap);
+      if (!secondBestChild) secondBestChild = bestChild;
+      await DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn + 1), inc_flag, depth + 1, pathMap);
     }
+
+    // イベントループに制御を戻す（キー押しなどの反応を許可）
+    if (depth % 10 === 0) await new Promise(r => setTimeout(r));
   }
 
-  // 関数を抜ける直前に pathMap のカウントを戻す
   pathMap.set(myHash, prevCount);
   if (prevCount === 0) pathMap.delete(myHash);
 }
+
 /* -------------------- Root -------------------- */
-function findMateDFPN(koma, board, attacker) {
+async function findMateDFPN(koma, board, attacker) {
+  finish = false; // 探索前にリセット
   const rootEntry = makeNodeIfAbsent(koma, board, attacker, attacker);
   rootEntry.depthes.push(0);
   let thpn = Number.MAX_SAFE_INTEGER, thdn = Number.MAX_SAFE_INTEGER;
-  DFPNwithTCA(rootEntry, thpn, thdn, false);
+  await DFPNwithTCA(rootEntry, thpn, thdn, false);
   return {
     mate: rootEntry.pn === 0 ? true : rootEntry.dn === 0 ? false : null,
     entry: rootEntry
@@ -1184,9 +1186,65 @@ document.getElementById("btn-reset").addEventListener("click", () => {
   if(confirm("本当に初期化しますか？")) init();
 });
 document.getElementById('btn-ana').addEventListener('click', aiMove);
-document.addEventListener("keydown", function(event) {
+document.addEventListener("keydown", async function(event) {
   if (event.code === "Enter") {
     aiMove();
+  }
+  if (event.code === "KeyT") {
+    finish = true;
+    console.log('finish!');
+  }
+  if (event.code === "KeyS") {
+    finish = false;
+    const aiPlayer = currentPlayer;
+    const promise = findMateDFPN(komadai, boardState, aiPlayer);
+    promise.then(({mate, entry}) => {
+      let matePro = [];
+      console.log(mate, entry);
+      if (mate) {
+        let node = entry;
+        while(true) {
+          console.log(matePro);
+          if (!node.children || node.children.length === 0) {
+            const { move } = node.parentMove;
+            matePro.push(move);
+            break;
+          } else {
+            const { move, index } = node.bestMove === null ? {move: node.children[0].parentMove.move, index: 0} : node.bestMove;
+            matePro.push(move);
+            node = node.children[index]; // 次のノードに進む
+          }
+        }
+      }
+      if (mate) {
+        const move = matePro[0];
+        console.log(move, matePro);
+        aiDiv.innerHTML = '';
+        const mateDiv = document.createElement('div');
+        mateDiv.className = 'shot mate';
+        const titleS = document.createElement('h3');
+        titleS.className = 'title';
+        const file = toJa[9 - move.to.c][0];
+        const rank = toJa[move.to.r + 1][1];
+        if(move.from.put) {
+          titleS.textContent = `${file}${rank}${mapping[move.from.t].display}打`;
+        } else {
+          const piece = boardState[move.from.r][move.from.c];
+          if (last[0] == 9 - move.to.c && last[1] == move.to.r + 1) {
+            titleS.textContent = `同${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
+          } else {
+            titleS.textContent = `${file}${rank}${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
+          }
+        }
+        const valueS = document.createElement('h4');
+        valueS.className = 'value';
+        valueS.textContent = `#-${matePro.length - 1}`;
+        mateDiv.appendChild(titleS);
+        mateDiv.appendChild(valueS);
+        aiDiv.appendChild(mateDiv);
+      }
+
+    });
   }
 });
 init();
