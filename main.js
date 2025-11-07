@@ -792,13 +792,13 @@ function evaluate(koma, board, p, nowP) {
 }
 /* -------------------- 盤面コピー関数 -------------------- */
 function cloneBoard(board) {
-  return board.map(row => row.map(cell => cell ? {...cell} : null));
+  return board.map(row => row.map(cell => cell ? { ...cell } : null));
 }
 
 function cloneKomadai(koma) {
   const newKomadai = {};
   for (const player of Object.keys(koma)) {
-    newKomadai[player] = {...koma[player]};
+    newKomadai[player] = { ...koma[player] };
   }
   return newKomadai;
 }
@@ -813,13 +813,14 @@ function randomBigInt() {
 // Zobrist tables
 const PIECE_TYPES = 16;
 const MAX_HAND = 18;
-const zobristTable = Array.from({length: 9}, () =>
-  Array.from({length: 9}, () =>
-    Array.from({length: PIECE_TYPES}, () => [randomBigInt(), randomBigInt()])
+const zobristTable = Array.from({ length: 9 }, () =>
+  Array.from({ length: 9 }, () =>
+    Array.from({ length: PIECE_TYPES }, () => [randomBigInt(), randomBigInt()])
   )
 );
+
 const zobristHand = { black: {}, white: {} };
-for (const p of ["black","white"]) {
+for (const p of ["black", "white"]) {
   for (let t = 0; t < PIECE_TYPES; t++) {
     zobristHand[p][t] = [];
     for (let n = 0; n <= MAX_HAND; n++) {
@@ -841,7 +842,7 @@ function generateHash(koma, board, turn) {
       }
     }
   }
-  for (const p of ["black","white"]) {
+  for (const p of ["black", "white"]) {
     for (const t in koma[p]) {
       const count = koma[p][t];
       if (count > 0) hash ^= zobristHand[p][t][count];
@@ -850,6 +851,9 @@ function generateHash(koma, board, turn) {
   if (turn === "white") hash ^= zobristTurn;
   return hash;
 }
+
+/* -------------------- 経路マップ（子hash → {親hash, move}） -------------------- */
+const parentMap = new Map();
 
 /* -------------------- Transposition Table -------------------- */
 const TT = new Map();
@@ -886,7 +890,8 @@ function hasCheckMove(board, attacker, defender) {
     for (let c = 0; c < 9; c++) {
       const cell = board[r][c];
       if (cell && cell.p === defender && (cell.t === 14 || cell.t === 15)) {
-        kingPos = [r,c]; break;
+        kingPos = [r, c];
+        break;
       }
     }
     if (kingPos) break;
@@ -932,6 +937,7 @@ function makeMoveSim(koma, board, move, p) {
   }
   return { newBoard, newKomadai };
 }
+
 function scoreMove(koma, board, move, turn) {
   //const dest = board[move.to.r][move.to.c];
   let score = move.from.put ? 150 + pieceValue(move.from.t) : 100;
@@ -944,7 +950,7 @@ function scoreMove(koma, board, move, turn) {
 }
 
 function pieceValue(type) {
-  switch(type){
+  switch (type) {
     case 14: case 15: return 1000; // 王は大きく
     case 5: return 9; // 金
     case 4: return 5; // 銀
@@ -954,7 +960,9 @@ function pieceValue(type) {
     default: return 0;
   }
 }
+
 let considerAllMoves = false;
+
 /* -------------------- PN/DN計算 -------------------- */
 function expandAndComputePnDn(entry, depth) {
   if (entry.status === 'PROVED' || entry.status === 'DISPROVED') return;
@@ -976,6 +984,7 @@ function expandAndComputePnDn(entry, depth) {
     entry.children = [];
     return;
   }
+
   if (!entry.children) {
     entry.children = [];
     for (const move of legalMoves) {
@@ -983,7 +992,9 @@ function expandAndComputePnDn(entry, depth) {
       const childHash = generateHash(newKomadai, newBoard, entry.turn === 'black' ? 'white' : 'black');
       let child = ttGet(childHash);
       if (!child) {
-        child = makeNodeIfAbsent(newKomadai, newBoard,
+        child = makeNodeIfAbsent(
+          newKomadai,
+          newBoard,
           entry.turn === 'black' ? 'white' : 'black',
           entry.rootAttackSide
         );
@@ -993,9 +1004,12 @@ function expandAndComputePnDn(entry, depth) {
         child.depthes.push(depth + 1);
         ttSet(childHash, child);
       }
+      // 経路情報を parentMap に記録
+      if (!parentMap.has(`${entry.hash}_${child.hash}`)) {
+        parentMap.set(`${entry.hash}_${child.hash}`, move);
+      }
 
-      entry.children.push({child, move});
-      child.parentMove = { index: entry.children.length - 1, move };
+      entry.children.push({ child, move });
     }
 
     // 攻め側なら王手や駒取りを優先
@@ -1006,22 +1020,19 @@ function expandAndComputePnDn(entry, depth) {
         return bScore - aScore; // 高いスコアを前に
       });
     }
-    
-    entry.children.forEach((c, i) => {
-      c.child.parentMove.index = i;
-    });
 
     // ソート後に child だけの配列に変換
     entry.children = entry.children.map(e => e.child);
   }
 
-  let bestMove = null;
+  let bestMoveObj = null;
   if (entry.turn === entry.rootAttackSide) {
     entry.pn = Infinity; entry.dn = 0;
     for (const c of entry.children) {
       if (c.pn < entry.pn) {
         entry.pn = c.pn;
-        bestMove = c.parentMove;
+        // c.moveFromParent に親から来た手オブジェクトが入っているはず
+        bestMoveObj = c.moveFromParent || null;
       }
       entry.dn += c.dn;
     }
@@ -1031,48 +1042,53 @@ function expandAndComputePnDn(entry, depth) {
       entry.pn += c.pn;
       if (c.dn < entry.dn) {
         entry.dn = c.dn;
-        bestMove = c.parentMove;
+        bestMoveObj = c.moveFromParent || null;
       }
     }
   }
 
-  entry.bestMove = bestMove;
+  entry.bestMove = bestMoveObj;
+  ttSet(entry.hash, entry);
   entry.status = 'EXPANDED';
-  const hash = generateHash(entry.koma, entry.board, entry.turn);
-  ttSet(hash, entry);
 }
+
 // 千日手検出に使う出現回数（将棋では 4 回で千日手判定することが多い）
 let REP_LIMIT = 4;
+
 // DFPNwithTCA に pathMap（ハッシュ->出現回数）を追加
 /* -------------------- async版 DFPNwithTCA -------------------- */
 async function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0, pathMap = new Map()) {
+  console.log(thpn, thdn, entry.pn, entry.dn, inc_flag, depth);
   if (finish) return; // 停止チェック
 
-  // 現ノードのハッシュをパスに追加
+  // ハッシュ生成と保存
   const myHash = entry.hash || generateHash(entry.koma, entry.board, entry.turn);
   entry.hash = myHash;
 
-  const prevCount = pathMap.get(myHash) || 0;
-  pathMap.set(myHash, prevCount + 1);
+  // === 各経路ごとに独立したpathMapを使う ===
+  const localPathMap = new Map(pathMap); // コピーして使う
 
-  if (pathMap.get(myHash) >= REP_LIMIT) {
+  // 出現回数をインクリメント
+  const prevCount = localPathMap.get(myHash) || 0;
+  localPathMap.set(myHash, prevCount + 1);
+
+  // === 千日手チェック ===
+  if (localPathMap.get(myHash) >= 2) {
+    console.log("ループ！", depth, myHash);
     if (entry.turn === entry.rootAttackSide) {
       entry.pn = Infinity; entry.dn = 0; entry.status = 'DISPROVED';
     } else {
       entry.pn = 0; entry.dn = Infinity; entry.status = 'PROVED';
     }
-    pathMap.set(myHash, prevCount);
     return;
   }
 
+  // 展開処理
   expandAndComputePnDn(entry, depth);
-  if (entry.status === 'PROVED' || entry.status === 'DISPROVED') {
-    pathMap.set(myHash, prevCount);
-    return;
-  }
+  if (entry.status === 'PROVED' || entry.status === 'DISPROVED') return;
 
   let firstTime = true;
-  while (!finish) { // 停止チェックつきループ
+  while (!finish) {
     if (entry.status === 'UNEXPENDED') inc_flag = false;
 
     expandAndComputePnDn(entry, depth);
@@ -1089,27 +1105,25 @@ async function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0, pathMap = new
 
     let bestChild = null, secondBestChild = null;
     if (entry.turn === entry.rootAttackSide) {
-      nonTerminal.forEach(c => {
+      for (const c of nonTerminal) {
         if (!bestChild || c.pn < bestChild.pn) { secondBestChild = bestChild; bestChild = c; }
         else if (!secondBestChild || c.pn < secondBestChild.pn) secondBestChild = c;
-      });
+      }
       if (!secondBestChild) secondBestChild = bestChild;
-      await DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn + 1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1, pathMap);
+      await DFPNwithTCA(bestChild, Math.min(thpn, secondBestChild.pn + 1), thdn - entry.dn + bestChild.dn, inc_flag, depth + 1, localPathMap);
     } else {
-      nonTerminal.forEach(c => {
+      for (const c of nonTerminal) {
         if (!bestChild || c.dn < bestChild.dn) { secondBestChild = bestChild; bestChild = c; }
         else if (!secondBestChild || c.dn < secondBestChild.dn) secondBestChild = c;
-      });
+      }
       if (!secondBestChild) secondBestChild = bestChild;
-      await DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn + 1), inc_flag, depth + 1, pathMap);
+      await DFPNwithTCA(bestChild, thpn - entry.pn + bestChild.pn, Math.min(thdn, secondBestChild.dn + 1), inc_flag, depth + 1, localPathMap);
     }
 
-    // イベントループに制御を戻す（キー押しなどの反応を許可）
-    if (depth % 10 === 0) await new Promise(r => setTimeout(r));
+    if (depth % 10 === 0) {
+      await new Promise(r => setTimeout(r));
+    }
   }
-
-  pathMap.set(myHash, prevCount);
-  if (prevCount === 0) pathMap.delete(myHash);
 }
 
 /* -------------------- Root -------------------- */
@@ -1125,6 +1139,31 @@ async function findMateDFPN(koma, board, attacker) {
   };
 }
 
+
+/* -------------------- 経路復元 -------------------- */
+function reconstructMateLine(rootEntry) {
+  const line = [];
+  let current = rootEntry;
+
+  // rootからpn=0の子ノードを辿る
+  while (current && current.children && current.children.length > 0) {
+    // pn==0の子を探す（DFPN的に詰み経路）
+    const next = current.children.find(c => c.pn === 0);
+    if (!next) break;
+
+    // parentMapに経路情報がある場合はmoveを取得
+    const childHash = next.hash;
+    const info = parentMap.get(`${current.hash}_${childHash}`);
+    if (info) {
+      line.push(info);
+    }
+
+    current = next;
+  }
+
+  return line;
+}
+
 function makeMoveSim(koma, board, move, p) {
     const newBoard = cloneBoard(board);
     const newKomadai = cloneKomadai(koma);
@@ -1137,6 +1176,7 @@ function makeMoveSim(koma, board, move, p) {
     } else {
       const dest = newBoard[move.to.r][move.to.c];
       const piece = newBoard[move.from.r][move.from.c];
+      
       newBoard[move.to.r][move.to.c] = newBoard[move.from.r][move.from.c];
       if (move.to.promoted) {
         newBoard[move.to.r][move.to.c].t = promote[piece.t];
@@ -1202,8 +1242,7 @@ document.addEventListener("keydown", async function(event) {
   if (event.code === "KeyT") {
     finish = true;
     console.log('finish!');
-  }
-  if (event.code === "KeyS") {
+  } if (event.code === "KeyS") {
     finish = false;
     const aiPlayer = currentPlayer;
     const promise = findMateDFPN(komadai, boardState, aiPlayer);
@@ -1211,21 +1250,11 @@ document.addEventListener("keydown", async function(event) {
       let matePro = [];
       console.log(mate, entry);
       if (mate) {
-        let node = entry;
-        while(true) {
-          console.log(matePro);
-          if (!node.children || node.children.length === 0) {
-            const { move } = node.parentMove;
-            matePro.push(move);
-            break;
-          } else {
-            const { move, index } = node.bestMove === null ? {move: node.children[0].parentMove.move, index: 0} : node.bestMove;
-            matePro.push(move);
-            node = node.children[index]; // 次のノードに進む
-          }
-        }
+        matePro = reconstructMateLine(entry);
+        console.log("復元された詰み手順:", matePro);
       }
-      if (mate) {
+
+      if (mate && matePro.length > 0) {
         const move = matePro[0];
         console.log(move, matePro);
         aiDiv.innerHTML = '';
@@ -1235,26 +1264,29 @@ document.addEventListener("keydown", async function(event) {
         titleS.className = 'title';
         const file = toJa[9 - move.to.c][0];
         const rank = toJa[move.to.r + 1][1];
-        if(move.from.put) {
+        if (move.from.put) {
           titleS.textContent = `${file}${rank}${mapping[move.from.t].display}打`;
         } else {
           const piece = boardState[move.from.r][move.from.c];
+          if (!piece && !move.from.put) {
+            console.warn("❗ pieceがnullです", move);
+          }
           if (last[0] == 9 - move.to.c && last[1] == move.to.r + 1) {
-            titleS.textContent = `同${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
+            titleS.textContent = `同${mapping[piece.t].display}${move.to.promoted ? "成" : move.to.promoted === false ? "不成" : ""}`;
           } else {
-            titleS.textContent = `${file}${rank}${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
+            titleS.textContent = `${file}${rank}${mapping[piece.t].display}${move.to.promoted ? "成" : move.to.promoted === false ? "不成" : ""}`;
           }
         }
         const valueS = document.createElement('h4');
         valueS.className = 'value';
-        valueS.textContent = `#-${matePro.length - 1}`;
+        valueS.textContent = `#-${matePro.length}`;
         mateDiv.appendChild(titleS);
         mateDiv.appendChild(valueS);
         aiDiv.appendChild(mateDiv);
       }
-
     });
   }
+
 });
 init();
 window.getBoardState = () => boardState;
