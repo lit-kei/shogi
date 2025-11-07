@@ -1038,7 +1038,7 @@ function expandAndComputePnDn(entry, depth) {
 
   entry.bestMove = bestMove;
   entry.status = 'EXPANDED';
-  const hash = generateHash(entry.komadai, entry.board, entry.turn);
+  const hash = generateHash(entry.koma, entry.board, entry.turn);
   ttSet(hash, entry);
 }
 // 千日手検出に使う出現回数（将棋では 4 回で千日手判定することが多い）
