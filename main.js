@@ -555,6 +555,7 @@ function minimaxAB_Z(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer
     abttSet(hash, { value, depth });
     return value;
   }
+  
 
   // === 合法手生成 ===
   const { moves, change } = getLegalMoves(koma, board, currentP);
