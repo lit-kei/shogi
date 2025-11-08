@@ -111,8 +111,8 @@ function init() {
       komadai.white = onlyKingsKomadai.white;
     }
   } else {
-    komadai.black = {};
-    komadai.white = {};
+    komadai.black = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
+    komadai.white = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
   }
   nowMoves = getLegalMoves(komadai, boardState, currentPlayer).moves;
   possibleMoves = [];
@@ -406,7 +406,6 @@ async function makeMove(from, to) {
   if (from.put) {
     boardState[to.r][to.c] = {t:from.t,p:currentPlayer};
     komadai[currentPlayer][from.t]--;
-    if (komadai[currentPlayer][from.t] == 0) delete komadai[currentPlayer][from.t];
     moveStr = `${posToSfen(to)}${mapping[from.t].display}打`;
   } else {
     const piece = boardState[from.r][from.c];
@@ -488,7 +487,7 @@ function isKingInCheck(board, player) {
     const enemyAttacks = getAttackSquares(board, enemy);
     return enemyAttacks.some(([r, c]) => r === kr && c === kc);
 }
-
+/*
 function getListRandomly(list) {
   if (list.length <= maxPutWidth) return list;
   const newList = [];
@@ -496,11 +495,27 @@ function getListRandomly(list) {
     newList.push(list.splice(Math.floor(Math.random() * (list.length)),1)[0]);
   }
   return newList;
+}*/
+function getListRandomly(list) {
+  const shuffled = [...list];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled.slice(0, maxPutWidth);
 }
 function getOrderedMoves(moves, board, currentP) {
   const captureMoves = moves.filter(m => board[m.to.r][m.to.c]);
   const nonCaptureMoves = moves.filter(m => !board[m.to.r][m.to.c]);
   return [...captureMoves, ...nonCaptureMoves];
+}
+function getOrderedMovesWithPV(moves, hash) {
+  const entry = ABTT.get(hash);
+  if (entry && entry.bestMove) {
+    // bestMove を先頭に
+    moves.sort((a, b) => a === entry.bestMove ? -1 : b === entry.bestMove ? 1 : 0);
+  }
+  return moves;
 }
 
 function getOrderedMovesWithDrops(moves, board, currentP) {
@@ -522,15 +537,15 @@ const ABTT = new Map();
 function abttGet(hash) { return ABTT.get(hash); }
 const ABTT_MAX = 500000;
 function abttSet(hash, entry) {
-  if (entry.depth < 2) return entry; // 浅い局面は保存しない
+  if (entry.depth < 2) return entry;
   if (ABTT.size >= ABTT_MAX) {
-    console.log('cut');
     const keysToDelete = ABTT.size - ABTT_MAX + 1;
     const it = ABTT.keys();
     for (let i = 0; i < keysToDelete; i++) {
       ABTT.delete(it.next().value);
     }
   }
+  // entry に bestMove があればそのまま保存
   ABTT.set(hash, entry);
   return entry;
 }
@@ -569,33 +584,96 @@ function minimaxAB_Z(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer
   }
 // --- 探索制限（効率化） ---
 // const searchMoves = [...moves.slice(0, change), ...getListRandomly(moves.slice(change))];
-const searchMoves = getOrderedMovesWithDrops(moves, board, currentP);
+const searchMoves = getOrderedMovesWithPV(getOrderedMovesWithDrops(moves, board, currentP), hash);
 
 
-  let bestValue;
 
-  if (maximizingPlayer) {
-    bestValue = -Infinity;
-    for (const move of searchMoves) {
-      const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
-      const value = minimaxAB_Z(newKomadai, newBoard, depth - 1, alpha, beta, false, aiPlayer);
-      bestValue = Math.max(bestValue, value);
-      alpha = Math.max(alpha, value);
-      if (beta <= alpha) break; // βカット
+let bestValue, bestMoveLocal;
+
+if (maximizingPlayer) {
+  bestValue = -Infinity;
+  for (const move of searchMoves) {
+    const captured = doMove(board, koma, move, currentP);  // ←進める
+    const value = minimaxAB_Z(koma, board, depth - 1, alpha, beta, false, aiPlayer);
+    undoMove(board, koma, move, currentP, captured);       // ←戻す
+    if (value > bestValue) {
+      bestValue = value;
+      bestMoveLocal = move; // ← これを追加
     }
+    alpha = Math.max(alpha, value);
+    if (beta <= alpha) break;
+  }
+} else {
+  bestValue = Infinity;
+  for (const move of searchMoves) {
+    const captured = doMove(board, koma, move, currentP);  // ←進める
+    const value = minimaxAB_Z(koma, board, depth - 1, alpha, beta, true, aiPlayer);
+    undoMove(board, koma, move, currentP, captured);       // ←戻す
+    if (value < bestValue) {
+      bestValue = value;
+      bestMoveLocal = move; // ← これを追加
+    }
+    beta = Math.min(beta, value);
+    if (beta <= alpha) break;
+  }
+}
+
+// 保存する時に bestMove も一緒に
+abttSet(hash, { value: bestValue, depth, bestMove: bestMoveLocal });
+return bestValue;
+
+}
+// --- 一手進める ---
+function doMove(board, koma, move, currentP) {
+  let captured = null;
+
+  if (move.from.put) {
+    // 駒打ち
+    board[move.to.r][move.to.c] = { p: currentP, t: move.from.t };
+    koma[currentP][move.from.t]--;
   } else {
-    bestValue = Infinity;
-    for (const move of searchMoves) {
-      const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
-      const value = minimaxAB_Z(newKomadai, newBoard, depth - 1, alpha, beta, true, aiPlayer);
-      bestValue = Math.min(bestValue, value);
-      beta = Math.min(beta, value);
-      if (beta <= alpha) break; // αカット
+    // 通常の指し手
+    const piece = board[move.from.r][move.from.c];
+    captured = board[move.to.r][move.to.c];
+
+    // 成る
+    const newType = (move.to.promoted === true)
+      ? promote[piece.t]
+      : piece.t;
+
+    board[move.to.r][move.to.c] = { p: currentP, t: newType };
+    board[move.from.r][move.from.c] = null;
+
+    if (captured) {
+      // 駒台に追加（持ち駒化）
+      koma[currentP][demote(captured.t)]++;
     }
   }
 
-  abttSet(hash, { value: bestValue, depth });
-  return bestValue;
+  return captured; // 元に戻すために必要
+}
+
+// --- 一手戻す ---
+function undoMove(board, koma, move, currentP, captured) {
+  if (move.from.put) {
+    // 駒打ちを戻す
+    board[move.to.r][move.to.c] = null;
+    koma[currentP][move.from.t]++;
+  } else {
+    const piece = board[move.to.r][move.to.c];
+    board[move.from.r][move.from.c] = { p: currentP, t: piece.t };
+    board[move.to.r][move.to.c] = captured;
+
+    // 成り・不成の戻し
+    if (move.to.promoted === true) {
+      board[move.from.r][move.from.c].t = demote(piece.t);
+    }
+
+    // 持ち駒を戻す
+    if (captured) {
+      koma[currentP][demote(captured.t)]--;
+    }
+  }
 }
 
 /* -------------------- findBestMove修正版 -------------------- */
@@ -609,8 +687,11 @@ async function findBestMove(koma, board, depth, aiPlayer) {
   let n = 10;
 
   for (const move of searchMoves) {
-    const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
-    const value = minimaxAB_Z(newKomadai, newBoard, depth - 1, -Infinity, Infinity, false, aiPlayer);
+    //const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
+    
+    const captured = doMove(board, koma, move, aiPlayer);  // ←進める
+    const value = minimaxAB_Z(koma, board, depth - 1, -Infinity, Infinity, false, aiPlayer);
+    undoMove(board, koma, move, aiPlayer, captured);       // ←戻す
 
         for (let i = 0; i < 9; i++) {
             if (i == values.length) {
@@ -1178,9 +1259,17 @@ function makeMoveSim(koma, board, move, p) {
     return {newBoard, newKomadai};
 }
 
+const demoteMap = {
+    8: 1,   // と → 歩
+    9: 2,   // 成香 → 香
+    10: 3,  // 成桂 → 桂
+    11: 4,  // 成銀 → 銀
+    12: 6,  // 馬 → 角
+    13: 7,  // 龍 → 飛
+};
+
 function demote(t) {
-    const s = promote.indexOf(t);
-    return s == -1 ? t : s;
+    return demoteMap[t] ?? t;
 }
 function posToSfen(pos) {
   const file = 9 - pos.c;
@@ -1208,6 +1297,7 @@ function renderKomadai() {
   ]) {
     const map = komadai[ownerKey];
     Object.keys(map).forEach((k) => {
+      if (map[k] === 0) return;
       const span = document.createElement("div");
       span.className = "cap";
       span.textContent = `${mapping[k].display} x${map[k]}`;
@@ -1286,12 +1376,3 @@ document.addEventListener("keydown", async function(event) {
 
 });
 init();
-window.getBoardState = () => boardState;
-window.getCurrentPlayer = () => currentPlayer;
-window.doMove = (from, to) => {
-  makeMove(from, to);
-};
-window.getKomadai = () => komadai;
-console.log(
-  "将棋GUIロード完了。window.getBoardState(), window.doMove({r,c},{r,c}) などを使えます。"
-);
