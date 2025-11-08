@@ -62,6 +62,9 @@ const masuValue = [
 [3,3,3,3,3,3,3,3,3]
 ];
 
+let totalNodes = 0;
+let processedNodes = 0;
+let lastProgressUpdate = 0;
 
 let onlyKings = false;
 let allKoma = false;
@@ -87,6 +90,10 @@ const komadaiWhiteEl = document.getElementById("komadai-white");
 const modal = document.getElementById('modal');
 const aiDiv = document.getElementById('ai');
 function init() {
+  totalNodes = 0;
+  processedNodes = 0;
+  lastProgressUpdate = 0;
+
   boardHistory = [];
   boardState = cloneBoard(onlyKings ? onlyKingsBoard : initialSetup);
   last = [-1,-1];
@@ -481,60 +488,6 @@ function isKingInCheck(board, player) {
     const enemyAttacks = getAttackSquares(board, enemy);
     return enemyAttacks.some(([r, c]) => r === kr && c === kc);
 }
-function minimaxAB(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer) {
-    const currentP = maximizingPlayer ? aiPlayer : (aiPlayer === "black" ? "white" : "black");
-
-    // --- 終端ノード ---
-    if (depth === 0) return evaluate(koma, board, aiPlayer, currentP);
-
-    // --- 合法手の生成 ---
-    const { moves, change } = getLegalMoves(koma, board, currentP);
-
-    // --- 合法手がない場合（詰み or 引き分け） ---
-    if (moves.length === 0) {
-        const checked = isKingInCheck(board, currentP);
-        if (checked) {
-            // 詰まされている（チェックメイト）
-            return (currentP === aiPlayer) ? -Infinity : Infinity;
-        } else {
-            // ステイルメイト（千日手など）→引き分け扱い
-            return 0;
-        }
-    }
-
-    // --- 探索制限（効率化） ---
-    const searchMoves = [...moves.slice(0, change), ...getListRandomly(moves.slice(change))];
-
-    // --- 最大化プレイヤーの場合 ---
-    if (maximizingPlayer) {
-        let maxEval = -Infinity;
-
-        for (const move of searchMoves) {
-            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
-            const evalValue = minimaxAB(newKomadai, newBoard, depth - 1, alpha, beta, false, aiPlayer);
-            maxEval = Math.max(maxEval, evalValue);
-            alpha = Math.max(alpha, evalValue);
-            if (beta <= alpha) break; // βカット
-        }
-
-        return maxEval;
-    }
-
-    // --- 最小化プレイヤーの場合 ---
-    else {
-        let minEval = Infinity;
-
-        for (const move of searchMoves) {
-            const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
-            const evalValue = minimaxAB(newKomadai, newBoard, depth - 1, alpha, beta, true, aiPlayer);
-            minEval = Math.min(minEval, evalValue);
-            beta = Math.min(beta, evalValue);
-            if (beta <= alpha) break; // αカット
-        }
-
-        return minEval;
-    }
-}
 
 function getListRandomly(list) {
   if (list.length <= maxPutWidth) return list;
@@ -544,49 +497,149 @@ function getListRandomly(list) {
   }
   return newList;
 }
+function getOrderedMoves(moves, board, currentP) {
+  const captureMoves = moves.filter(m => board[m.to.r][m.to.c]);
+  const nonCaptureMoves = moves.filter(m => !board[m.to.r][m.to.c]);
+  return [...captureMoves, ...nonCaptureMoves];
+}
 
-// === 最善手を決定する ===
-async function findBestMove(koma, board, depth, aiPlayer) {
-    const {moves, change} = getLegalMoves(koma, board, aiPlayer);
-    let values = [];
-    let bestMove = null;
-    let bestValue = -Infinity;
-    let n = 5;
-    const searchMoves = [...moves.slice(0,change), ...getListRandomly(moves.slice(change))];
+function getOrderedMovesWithDrops(moves, board, currentP) {
+  const nonDrops = moves.filter(m => !m.from.put); // 駒打ち以外
+  const drops = moves.filter(m => m.from.put);     // 駒打ち
+  
+  // 非駒打ちは捕獲手優先で順序付け
+  const orderedNonDrops = getOrderedMoves(nonDrops, board, currentP);
+  
+  // 駒打ちはランダムで一部だけ採用
+  const limitedDrops = getListRandomly(drops);
+  
+  return [...orderedNonDrops, ...limitedDrops];
+}
 
+
+/* -------------------- AlphaBeta専用トランスポジションテーブル -------------------- */
+const ABTT = new Map();
+function abttGet(hash) { return ABTT.get(hash); }
+const ABTT_MAX = 500000;
+function abttSet(hash, entry) {
+  if (entry.depth < 2) return entry; // 浅い局面は保存しない
+  if (ABTT.size >= ABTT_MAX) {
+    console.log('cut');
+    const keysToDelete = ABTT.size - ABTT_MAX + 1;
+    const it = ABTT.keys();
+    for (let i = 0; i < keysToDelete; i++) {
+      ABTT.delete(it.next().value);
+    }
+  }
+  ABTT.set(hash, entry);
+  return entry;
+}
+
+/* -------------------- minimax（Zobrist＋TT対応版） -------------------- */
+function minimaxAB_Z(koma, board, depth, alpha, beta, maximizingPlayer, aiPlayer) {
+  processedNodes++;
+  updateProgressBar();
+
+  const currentP = maximizingPlayer ? aiPlayer : (aiPlayer === "black" ? "white" : "black");
+
+  // === ハッシュ計算 ===
+  const hash = generateHash(koma, board, currentP);
+  const cached = abttGet(hash);
+  if (cached && cached.depth >= depth) {
+    return cached.value;
+  }
+
+  // === 終端条件 ===
+  if (depth === 0) {
+    const value = evaluate(koma, board, aiPlayer, currentP);
+    abttSet(hash, { value, depth });
+    return value;
+  }
+
+  // === 合法手生成 ===
+  const { moves, change } = getLegalMoves(koma, board, currentP);
+  if (moves.length === 0) {
+    const checked = isKingInCheck(board, currentP);
+    const value = checked
+      ? (currentP === aiPlayer ? -Infinity : Infinity)
+      : 0;
+    abttSet(hash, { value, depth });
+    return value;
+  }
+// --- 探索制限（効率化） ---
+// const searchMoves = [...moves.slice(0, change), ...getListRandomly(moves.slice(change))];
+const searchMoves = getOrderedMovesWithDrops(moves, board, currentP);
+
+
+  let bestValue;
+
+  if (maximizingPlayer) {
+    bestValue = -Infinity;
     for (const move of searchMoves) {
-        const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
-        const value = minimaxAB(newKomadai, newBoard, depth - 1, -Infinity, Infinity, false, aiPlayer)/* + evaluate(newKomadai, newBoard, aiPlayer, aiPlayer == "black" ? "white" : "black")*/;
+      const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
+      const value = minimaxAB_Z(newKomadai, newBoard, depth - 1, alpha, beta, false, aiPlayer);
+      bestValue = Math.max(bestValue, value);
+      alpha = Math.max(alpha, value);
+      if (beta <= alpha) break; // βカット
+    }
+  } else {
+    bestValue = Infinity;
+    for (const move of searchMoves) {
+      const { newBoard, newKomadai } = makeMoveSim(koma, board, move, currentP);
+      const value = minimaxAB_Z(newKomadai, newBoard, depth - 1, alpha, beta, true, aiPlayer);
+      bestValue = Math.min(bestValue, value);
+      beta = Math.min(beta, value);
+      if (beta <= alpha) break; // αカット
+    }
+  }
+
+  abttSet(hash, { value: bestValue, depth });
+  return bestValue;
+}
+
+/* -------------------- findBestMove修正版 -------------------- */
+async function findBestMove(koma, board, depth, aiPlayer) {
+  const { moves, change } = getLegalMoves(koma, board, aiPlayer);
+  let values = [];
+  let bestMove = null;
+  let bestValue = -Infinity;
+
+  const searchMoves = [...moves.slice(0, change), ...getListRandomly(moves.slice(change))];
+  let n = 10;
+
+  for (const move of searchMoves) {
+    const { newBoard, newKomadai } = makeMoveSim(koma, board, move, aiPlayer);
+    const value = minimaxAB_Z(newKomadai, newBoard, depth - 1, -Infinity, Infinity, false, aiPlayer);
+
         for (let i = 0; i < 9; i++) {
-          if (i == values.length) {
-            values.push({move, value});
-            values.splice(10);
-            break;
-          }
-          if (value > values[i].value) {
-            values.splice(i, 0, {move, value});
-            values.splice(10);
-            break;
-          }
+            if (i == values.length) {
+                values.push({ move, value });
+                values.splice(10);
+                break;
+            }
+            if (value > values[i].value) {
+                values.splice(i, 0, { move, value });
+                values.splice(10);
+                break;
+            }
         }
         if (value > bestValue) {
             bestValue = value;
             bestMove = move;
         }
-        //ユーザーに表示
-        aiDiv.innerHTML = '';
         n--;
         if (n <= 0) {
-          n = 10;
-          await renderDiv(values);
-          
+            n = 10;
+            await renderDiv(values);
         }
-      }
-      await renderDiv(values);
-
+    }
+    await renderDiv(values);
     return values[0].move;
 }
+
+
 async function renderDiv(values) {
+  aiDiv.innerHTML = '';
 for (const e of values) {
             const shotDiv = document.createElement('div');
             shotDiv.className = 'shot';
@@ -613,92 +666,20 @@ for (const e of values) {
             await new Promise(resolve => setTimeout(resolve, 1));
           }
 }
-
+let maxNodes = 500000;
 // === AIのターンを実行 ===
 async function aiMove() {
     aiDiv.innerHTML = '';
+    processedNodes = 0;
+    totalNodes = maxNodes; // 推定探索ノード数（適宜調整）
     const aiPlayer = currentPlayer;
     const promise = findBestMove(komadai, boardState, searchDepth, aiPlayer);
     promise.then(bestMove => {
       console.log(bestMove);
+      processedNodes = maxNodes;
+      updateProgressBar();
       if (aiMode[aiPlayer]) makeMove(bestMove.from, bestMove.to);
     })
-    /*
-    const {mate, entry} = findMateDFPN(komadai, boardState, aiPlayer);
-    let matePro = [];
-    if (mate) {
-      let node = entry;
-      while(true) {
-        console.log(matePro);
-        if (!node.children || node.children.length === 0) {
-          const { move } = node.parentMove;
-          matePro.push(move);
-          break;
-        } else {
-          const { move, index } = node.bestMove === null ? {move: node.children[0].parentMove.move, index: 0} : node.bestMove;
-          matePro.push(move);
-          node = node.children[index]; // 次のノードに進む
-        }
-      }
-    }
-    promise.then(bestMove => {
-      if (mate) {
-        const move = matePro[0];
-        console.log(move, matePro);
-        aiDiv.innerHTML = '';
-        const mateDiv = document.createElement('div');
-        mateDiv.className = 'shot mate';
-        const titleS = document.createElement('h3');
-        titleS.className = 'title';
-        const file = toJa[9 - move.to.c][0];
-        const rank = toJa[move.to.r + 1][1];
-        if(move.from.put) {
-          titleS.textContent = `${file}${rank}${mapping[move.from.t].display}打`;
-        } else {
-          const piece = boardState[move.from.r][move.from.c];
-          if (last[0] == 9 - move.to.c && last[1] == move.to.r + 1) {
-            titleS.textContent = `同${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
-          } else {
-            titleS.textContent = `${file}${rank}${mapping[piece.t].display}${move.to.promoted === null ? "" : move.to.promoted ? "成" : "不成"}`;
-          }
-        }
-        const valueS = document.createElement('h4');
-        valueS.className = 'value';
-        valueS.textContent = `#-${matePro.length - 1}`;
-        mateDiv.appendChild(titleS);
-        mateDiv.appendChild(valueS);
-        aiDiv.appendChild(mateDiv);
-      } else {
-        console.log(bestMove);
-        if (aiMode[currentPlayer]) makeMove(bestMove.from, bestMove.to);
-      }
-    });*/
-    /*
-    if (mate) {
-          const shotDiv = document.createElement('div');
-          shotDiv.className = 'shot';
-          const titleS = document.createElement('h3');
-          titleS.className = 'title';
-          const file = toJa[9 - e.move.to.c][0];
-          const rank = toJa[e.move.to.r + 1][1];
-          if(e.move.from.put) {
-            titleS.textContent = `${file}${rank}${mapping[e.move.from.t].display}打`;
-          } else {
-            const piece = boardState[e.move.from.r][e.move.from.c];
-            if (last[0] == 9 - e.move.to.c && last[1] == e.move.to.r + 1) {
-              titleS.textContent = `同${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
-            } else {
-              titleS.textContent = `${file}${rank}${mapping[piece.t].display}${e.move.to.promoted === null ? "" : e.move.to.promoted ? "成" : "不成"}`;
-            }
-          }
-          const valueS = document.createElement('h4');
-          valueS.className = 'value';
-          valueS.textContent = e.value + ' 点';
-          shotDiv.appendChild(titleS);
-          shotDiv.appendChild(valueS);
-          aiDiv.appendChild(shotDiv);
-      
-    }*/
 }
 function makeAttackMap(board) {
     // attackMap[r][c] = [{p: 'black', t: pieceType}, ...]
@@ -965,6 +946,8 @@ let considerAllMoves = false;
 
 /* -------------------- PN/DN計算 -------------------- */
 function expandAndComputePnDn(entry, depth) {
+  processedNodes++; // 🔹 処理したノード数をカウント
+  updateProgressBar(); // 🔹 進捗バーを更新
   if (entry.status === 'PROVED' || entry.status === 'DISPROVED') return;
 
   const { moves } = getLegalMoves(entry.koma, entry.board, entry.turn);
@@ -1058,7 +1041,6 @@ let REP_LIMIT = 4;
 // DFPNwithTCA に pathMap（ハッシュ->出現回数）を追加
 /* -------------------- async版 DFPNwithTCA -------------------- */
 async function DFPNwithTCA(entry, thpn, thdn, inc_flag, depth = 0, pathMap = new Map()) {
-  console.log(thpn, thdn, entry.pn, entry.dn, inc_flag, depth);
   if (finish) return; // 停止チェック
 
   // ハッシュ生成と保存
@@ -1206,6 +1188,16 @@ function posToSfen(pos) {
   last = [file, rank];
   return `${toJa[file][0]}${toJa[rank][1]}`;
 }
+function updateProgressBar() {
+  if (totalNodes === 0) return;
+  const progress = Math.min((processedNodes / totalNodes) * 100, 100);
+  const bar = document.getElementById("progress-bar");
+  if (Date.now() - lastProgressUpdate > 50 || processedNodes == totalNodes) { // 50msに1回だけ更新
+    bar.style.width = progress + "%";
+    lastProgressUpdate = Date.now();
+  }
+}
+
 function renderKomadai() {
   komadaiBlackEl.innerHTML = "";
   komadaiWhiteEl.innerHTML = "";
@@ -1243,6 +1235,10 @@ document.addEventListener("keydown", async function(event) {
     finish = true;
     console.log('finish!');
   } if (event.code === "KeyS") {
+    processedNodes = 0;
+    totalNodes = maxNodes; // 推定探索ノード数（適宜調整）
+    updateProgressBar();
+
     finish = false;
     const aiPlayer = currentPlayer;
     const promise = findMateDFPN(komadai, boardState, aiPlayer);
@@ -1251,12 +1247,10 @@ document.addEventListener("keydown", async function(event) {
       console.log(mate, entry);
       if (mate) {
         matePro = reconstructMateLine(entry);
-        console.log("復元された詰み手順:", matePro);
       }
 
       if (mate && matePro.length > 0) {
         const move = matePro[0];
-        console.log(move, matePro);
         aiDiv.innerHTML = '';
         const mateDiv = document.createElement('div');
         mateDiv.className = 'shot mate';
@@ -1284,6 +1278,8 @@ document.addEventListener("keydown", async function(event) {
         mateDiv.appendChild(valueS);
         aiDiv.appendChild(mateDiv);
       }
+      processedNodes = maxNodes;
+      updateProgressBar();
     });
   }
 

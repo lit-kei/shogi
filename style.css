@@ -170,6 +170,9 @@ button {
   gap: 20px;
   flex-wrap: wrap;
 }
+.assist {
+  width: 100%;
+}
 .shot {
   width: 150px;
   background: white;
