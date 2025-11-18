@@ -74,7 +74,7 @@ let maxPutWidth = 30;
 let aiMode = {white: false, black: false};
 let boardState = [];
 let last = [-1,-1];
-let currentPlayer = "white";
+let currentPlayer = "black";
 let selected = null;
 let count = 0;
 let put = null;
@@ -97,11 +97,11 @@ function init() {
   boardHistory = [];
   boardState = cloneBoard(onlyKings ? onlyKingsBoard : initialSetup);
   last = [-1,-1];
-  currentPlayer = "white";
+  currentPlayer = "black";
   selected = null;
   count = 0;
   put = null;
-  finsih = true;
+  finish = true;
   if (onlyKings) {
     if (allKoma) {
       komadai.black = allKomadai.black;
@@ -403,6 +403,7 @@ function askPromotion() {
 }
 async function makeMove(from, to) {
   let moveStr = "";
+  count++;
   if (from.put) {
     boardState[to.r][to.c] = {t:from.t,p:currentPlayer};
     komadai[currentPlayer][from.t]--;
@@ -412,7 +413,6 @@ async function makeMove(from, to) {
     const dest = boardState[to.r][to.c];
     if (!piece) return;
     let promoted = to.promoted;
-    count++;
     if (dest) {
       const captured = { ...dest };
       const base = demote(captured.t);
@@ -453,6 +453,82 @@ async function makeMove(from, to) {
   }
   
 }
+function parseMoveUsingToJa(moveStr) {
+  // 先頭2文字が目的地（to）
+  const toStr1 = moveStr[0];  // 縦
+  const toStr2 = moveStr[1];  // 横
+
+  const toFile = findDigitFromJa(toStr1); // 1〜9
+  const toRank = findDigitFromJa(toStr2); // 1〜9
+
+  const to = {
+    c: 9 - toFile,
+    r: toRank - 1,
+    promoted: null
+  };
+
+  // drop（打つ）判定
+  const isDrop = moveStr.includes("打");
+
+  // from が無い場合（打つ）
+  if (isDrop) {
+    const t = findMapping(moveStr[2]);
+    return { from: {put: true, t}, to};
+  }
+
+  // () 内の "27" のような数字を抽出
+  const fromReg = /\(([^)]+)\)/;
+  const match = moveStr.match(fromReg);
+
+  if (!match) {
+    throw "from が無い指し手です: " + moveStr;
+  }
+  if (moveStr[3] == '成') {
+    to.promoted = true;
+  } else if (moveStr[3] == '不') {
+    to.promoted = false;
+  }
+
+  const fromStr = match[1];
+  const fromFile = findDigitFromJa(fromStr[0]);
+  const fromRank = findDigitFromJa(fromStr[1]);
+
+  const from = {
+    put: false,
+    c: 9 - fromFile,
+    r: fromRank - 1
+  };
+
+  return { from, to};
+}
+function findMapping(p) {
+  
+  for (const num in mapping) {
+    const list = mapping[num];
+    if (list.display == p) return parseInt(num);
+  }
+
+  throw "認識できない駒 " + p;
+}
+function findDigitFromJa(ch) {
+  for (const num in toJa) {
+    const list = toJa[num];
+    if (list.includes(ch)) return parseInt(num);
+  }
+
+  // 全角数字にも対応（例："１" → 1）
+  if (/[０-９]/.test(ch)) {
+    return ch.charCodeAt(0) - 0xFEE0;
+  }
+
+  // 半角数字にも対応
+  if (/[1-9]/.test(ch)) {
+    return parseInt(ch);
+  }
+
+  throw "数字として認識できない文字: " + ch;
+}
+
 function getAttackSquares(board, player) {
     const attackSquares = [];
     for (let r = 0; r < 9; r++) {
@@ -1376,3 +1452,16 @@ document.addEventListener("keydown", async function(event) {
 
 });
 init();
+
+document.getElementById('btn-input').addEventListener('click', () => {
+  init();
+  komadai.black = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
+  komadai.white = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
+  boardState = cloneBoard(initialSetup);
+  const value = document.getElementById('inputKifu').value.split('\n');
+  for (let i = 0; i < value.length; i++) {
+    const e = value[i].replace(/^\s*\d+\s+/, "");
+    const move = parseMoveUsingToJa(e);
+    makeMove(move.from, move.to);
+  }
+});
