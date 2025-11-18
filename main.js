@@ -445,7 +445,7 @@ async function makeMove(from, to) {
   if (nowMoves.length === 0) {
       const checked = isKingInCheck(boardState, currentPlayer);
       if (checked) {
-        alert(`${currentPlayer == "black" ? "先手" : "後手"} の勝ちです。`);
+        alert(`${currentPlayer == "white" ? "先手" : "後手"} の勝ちです。`);
       } else {
           // ステイルメイト（千日手など）→引き分け扱い
         alert("引き分けです。");
@@ -1385,7 +1385,7 @@ function renderKomadai() {
   }
 }
 function updateTurnUI() {
-  turnEl.textContent = currentPlayer === "black" ? "後手 (△)" : "先手 (▲)";
+  turnEl.textContent = currentPlayer === "white" ? "後手 (△)" : "先手 (▲)";
 }
 function reverse(r,p) {
     return p === "black" ? r : 8 - r;
