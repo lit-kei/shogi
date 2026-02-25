@@ -1453,15 +1453,16 @@ document.addEventListener("keydown", async function(event) {
 });
 init();
 
-document.getElementById('btn-input').addEventListener('click', () => {
+document.getElementById('btn-input').addEventListener('click', async () => {
   init();
   komadai.black = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
   komadai.white = {1:0,2:0,3:0,4:0,5:0,6:0,7:0};
   boardState = cloneBoard(initialSetup);
   const value = document.getElementById('inputKifu').value.split('\n');
+  console.log(currentPlayer);
   for (let i = 0; i < value.length; i++) {
     const e = value[i].replace(/^\s*\d+\s+/, "");
     const move = parseMoveUsingToJa(e);
-    makeMove(move.from, move.to);
+    await makeMove(move.from, move.to);
   }
 });
